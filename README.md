@@ -18,7 +18,7 @@ For example:
 | Move hand ↓                            | Slide       |
 | Move hand ←                            | Move Left   |
 | Move hand →                            | Move Right  |
-| Bring thumb + index finger together 🤏 | Roll        |
+| Bring thumb + index finger together    | Roll        |
 
 The concept is inspired by gesture-based controls in endless runner games such as Temple Run, while replacing traditional keyboard or controller input with natural hand movements.
 
