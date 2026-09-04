@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AirRunner - Stage 1: Hand Detection</title>
+  <style>
+    :root {
+      --bg-color: #0d0f12;
+      --card-bg: #1a1d24;
+      --accent: #00f0ff;
+      --success: #00ff66;
+      --danger: #ff3366;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      background-color: var(--bg-color);
+      color: #ffffff;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 90vh;
+    }
+
+    h1 {
+      margin: 0 0 5px 0;
+      font-size: 1.8rem;
+      letter-spacing: 2px;
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+
+    p.subtitle {
+      margin: 0 0 15px 0;
+      color: #a0a0a0;
+      font-size: 0.95rem;
+    }
+
+    .controls {
+      margin-bottom: 15px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    button {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      padding: 10px 20px;
+      font-size: 1rem;
+      font-weight: bold;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    button:hover {
+      background: #00c8d6;
+      box-shadow: 0 0 12px rgba(0, 240, 255, 0.4);
+    }
+
+    button:disabled {
+      background: #444;
+      color: #888;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .display-container {
+      position: relative;
+      width: 640px;
+      height: 480px;
+      background: var(--card-bg);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    #webcam, #output_canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+
+    .hud-overlay {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      background: rgba(13, 15, 18, 0.85);
+      backdrop-filter: blur(8px);
+      padding: 12px 18px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.85rem;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .status-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 8px;
+      background-color: var(--danger);
+      box-shadow: 0 0 8px var(--danger);
+    }
+
+    .dot.active {
+      background-color: var(--success);
+      box-shadow: 0 0 8px var(--success);
+    }
+
+    .val {
+      color: var(--accent);
+      font-weight: bold;
+    }
+
+    #debug-console {
+      width: 640px;
+      margin-top: 15px;
+      padding: 12px;
+      background: #050608;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.8rem;
+      color: #00ff66;
+      max-height: 120px;
+      overflow-y: auto;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>AirRunner</h1>
+  <p class="subtitle">Stage 1: Camera & Real-Time Hand Landmark Tracking</p>
+
+  <div class="controls">
+    <button id="start-btn">Start Camera</button>
+  </div>
+
+  <div class="display-container">
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="output_canvas"></canvas>
+    
+    <div class="hud-overlay">
+      <div class="status-row">
+        <span id="status-dot" class="dot"></span>
+        <span>Hand Detected: <span id="hand-status" class="val">NO</span></span>
+      </div>
+      <div class="status-row">
+        <span>Landmarks Tracked: <span id="landmark-count" class="val">0</span></span>
+      </div>
+      <div class="status-row">
+        <span>Pipeline FPS: <span id="fps-count" class="val">0</span></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="debug-console">> Diagnostics initialized. Click "Start Camera".</div>
+
+  <script type="module">
+    // Import MediaPipe vision modules using ES Module syntax
+    import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
+
+    const video = document.getElementById("webcam");
+    const canvasElement = document.getElementById("output_canvas");
+    const canvasCtx = canvasElement.getContext("2d");
+    const startBtn = document.getElementById("start-btn");
+    const debugConsole = document.getElementById("debug-console");
+    
+    const handStatus = document.getElementById("hand-status");
+    const statusDot = document.getElementById("status-dot");
+    const landmarkCount = document.getElementById("landmark-count");
+    const fpsCount = document.getElementById("fps-count");
+
+    let handLandmarker = null;
+    let lastVideoTime = -1;
+    let frameCount = 0;
+    let lastFpsUpdate = performance.now();
+
+    const HAND_CONNECTIONS = [
+      [0,1],[1,2],[2,3],[3,4],        
+      [0,5],[5,6],[6,7],[7,8],        
+      [5,9],[9,10],[10,11],[11,12],   
+      [9,13],[13,14],[14,15],[15,16], 
+      [13,17],[17,18],[18,19],[19,20],
+      [0,17]                           
+    ];
+
+    function logMsg(msg, isError = false) {
+      const line = document.createElement("div");
+      line.style.color = isError ? "#ff3366" : "#00ff66";
+      line.innerText = `> ${msg}`;
+      debugConsole.appendChild(line);
+      debugConsole.scrollTop = debugConsole.scrollHeight;
+    }
+
+    async function startCamera() {
+      logMsg("Checking camera support...");
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        logMsg("ERROR: Camera API unavailable. You MUST run this via http://localhost or HTTPS.", true);
+        return;
+      }
+
+      try {
+        logMsg("Requesting camera stream...");
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" }
+        });
+        attachStream(stream);
+      } catch (err) {
+        logMsg(`Ideal settings failed (${err.name}). Retrying basic stream...`);
+        try {
+          const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          attachStream(fallbackStream);
+        } catch (fallbackErr) {
+          logMsg(`CAM ERROR: ${fallbackErr.name} - ${fallbackErr.message}`, true);
+        }
+      }
+    }
+
+    function attachStream(stream) {
+      video.srcObject = stream;
+      video.onloadeddata = () => {
+        video.play();
+        startBtn.disabled = true;
+        logMsg("Webcam active! Loading MediaPipe Hand Tracker...");
+        initMediaPipe();
+      };
+    }
+
+    async function initMediaPipe() {
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+        );
+
+        handLandmarker = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numHands: 1
+        });
+
+        logMsg("MediaPipe loaded successfully! Real-time tracking active.");
+        renderLoop();
+      } catch (err) {
+        logMsg(`MediaPipe Load Error: ${err.message}`, true);
+      }
+    }
+
+    function renderLoop() {
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsUpdate >= 1000) {
+        fpsCount.innerText = frameCount;
+        frameCount = 0;
+        lastFpsUpdate = now;
+      }
+
+      if (canvasElement.width !== video.videoWidth) {
+        canvasElement.width = video.videoWidth;
+        canvasElement.height = video.videoHeight;
+      }
+
+      if (video.currentTime !== lastVideoTime && handLandmarker) {
+        lastVideoTime = video.currentTime;
+        const results = handLandmarker.detectForVideo(video, performance.now());
+        
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+        if (results.landmarks && results.landmarks.length > 0) {
+          const landmarks = results.landmarks[0];
+          handStatus.innerText = "YES";
+          statusDot.classList.add("active");
+          landmarkCount.innerText = landmarks.length;
+          drawSkeleton(landmarks);
+        } else {
+          handStatus.innerText = "NO";
+          statusDot.classList.remove("active");
+          landmarkCount.innerText = "0";
+        }
+      }
+
+      requestAnimationFrame(renderLoop);
+    }
+
+    function drawSkeleton(landmarks) {
+      const w = canvasElement.width;
+      const h = canvasElement.height;
+
+      canvasCtx.strokeStyle = "#00f0ff";
+      canvasCtx.lineWidth = 3;
+      for (const [start, end] of HAND_CONNECTIONS) {
+        const p1 = landmarks[start];
+        const p2 = landmarks[end];
+        canvasCtx.beginPath();
+        canvasCtx.moveTo(p1.x * w, p1.y * h);
+        canvasCtx.lineTo(p2.x * w, p2.y * h);
+        canvasCtx.stroke();
+      }
+
+      for (const lm of landmarks) {
+        canvasCtx.fillStyle = "#ff0055";
+        canvasCtx.beginPath();
+        canvasCtx.arc(lm.x * w, lm.y * h, 5, 0, 2 * Math.PI);
+        canvasCtx.fill();
+      }
+    }
+
+    startBtn.addEventListener("click", startCamera);
+  </script>
+</body>
+</html>f
