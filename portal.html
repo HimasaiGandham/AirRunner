@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Game Portal - AirRunner</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #0d1117;
+      color: #fff;
+      font-family: 'Inter', sans-serif;
+    }
+    
+    header {
+      padding: 20px 40px;
+      background: rgba(28, 38, 56, 0.8);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #4a5568;
+    }
+    
+    header h1 {
+      color: #ffaa00;
+      margin: 0;
+    }
+    
+    #user-info {
+      color: #a0aec0;
+    }
+    
+    #logout-btn {
+      background: transparent;
+      border: 1px solid #ff3366;
+      color: #ff3366;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-left: 15px;
+      transition: all 0.3s;
+    }
+    
+    #logout-btn:hover {
+      background: #ff3366;
+      color: #fff;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 50px auto;
+      padding: 0 20px;
+    }
+
+    .games-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 30px;
+      margin-top: 40px;
+    }
+
+    .game-card {
+      background: #1c2638;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #4a5568;
+      transition: transform 0.3s, box-shadow 0.3s;
+      cursor: pointer;
+    }
+
+    .game-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 20px rgba(255, 170, 0, 0.2);
+      border-color: #ffaa00;
+    }
+
+    .game-banner {
+      width: 100%;
+      height: 180px;
+      background: url('https://images.unsplash.com/photo-1552820728-8b83bb6b773f?q=80&w=2070&auto=format&fit=crop') center/cover;
+    }
+
+    .game-info {
+      padding: 20px;
+    }
+
+    .game-info h3 {
+      margin: 0 0 10px 0;
+      color: #ffaa00;
+      font-size: 22px;
+    }
+
+    .game-info p {
+      color: #a0aec0;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    
+    .play-btn {
+      display: inline-block;
+      margin-top: 15px;
+      padding: 10px 20px;
+      background: linear-gradient(90deg, #ff8c00, #ff5e00);
+      color: #fff;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Game Portal</h1>
+    <div>
+      <span id="user-info">Welcome, Pilot</span>
+      <button id="logout-btn">Logout</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <h2>Available Games</h2>
+    <p style="color: #a0aec0;">Select a game to begin your session.</p>
+    
+    <div class="games-grid">
+      <!-- Game 1: Temple Run / AirRunner -->
+      <div class="game-card" onclick="window.location.href='index.html'">
+        <div class="game-banner"></div>
+        <div class="game-info">
+          <h3>Temple Run (AirRunner)</h3>
+          <p>A touchless endless-runner controlled entirely through real-time hand gestures. Use your webcam to jump, slide, and weave through obstacles!</p>
+          <a href="index.html" class="play-btn">Play Now</a>
+        </div>
+      </div>
+      
+      <!-- Placeholder Game -->
+      <div class="game-card" style="opacity: 0.5; cursor: not-allowed;">
+        <div class="game-banner" style="background-image: url('https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=2071&auto=format&fit=crop');"></div>
+        <div class="game-info">
+          <h3 style="color: #4a5568;">Space Shooter (Coming Soon)</h3>
+          <p>Blast through asteroid fields in this upcoming VR-style shooter.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Simple Auth check on Portal Load
+    document.addEventListener('DOMContentLoaded', () => {
+      const token = localStorage.getItem('airrunner_token');
+      const pilotName = localStorage.getItem('airrunner_pilotName');
+      
+      if (!token) {
+        window.location.href = 'login.html';
+        return;
+      }
+      
+      if (pilotName) {
+        document.getElementById('user-info').innerText = `Welcome, ${pilotName}`;
+      }
+      
+      document.getElementById('logout-btn').addEventListener('click', () => {
+        localStorage.removeItem('airrunner_token');
+        localStorage.removeItem('airrunner_pilotName');
+        localStorage.removeItem('airrunner_gamerId');
+        window.location.href = 'login.html';
+      });
+    });
+  </script>
+</body>
+</html>
