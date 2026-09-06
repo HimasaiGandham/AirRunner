@@ -1,9 +1,9 @@
 /**
- * AirRunner - Player Character Entity & State Machine
- * Renders an original futuristic neon Cyber Runner in pseudo-3D perspective.
- * Features smooth lane interpolation, jumping arcs, sliding crouches,
- * holographic roll spheres, and impact animations.
- */
+* AirRunner - Player Character Entity & State Machine
+* Renders an original futuristic neon Cyber Runner in pseudo-3D perspective.
+* Features smooth lane interpolation, jumping arcs, sliding crouches,
+* holographic roll spheres, and impact animations.
+*/
 
 import { CONFIG } from './config.js';
 import { audio } from './audio.js';
