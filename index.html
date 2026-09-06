@@ -2,13 +2,287 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="refresh" content="0; url=login.html">
-  <title>AirRunner Gateway</title>
-  <script>
-    window.location.href = "login.html";
-  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AirRunner – Touchless Hand Gesture Endless Runner</title>
+  <meta name="description" content="AirRunner is a futuristic endless runner game controlled entirely through real-time hand gestures captured via your webcam using MediaPipe computer vision.">
+  <link rel="stylesheet" href="style.css">
 </head>
-<body style="background: #07090e; color: #00f0ff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;">
-  <p>Redirecting to <a href="login.html" style="color: #00f0ff;">AirRunner Login Portal</a>...</p>
+<body>
+
+  <div id="app-container">
+
+    <!-- 3D Perspective Game Canvas -->
+    <div id="game-canvas-container">
+      <canvas id="game-canvas"></canvas>
+    </div>
+
+    <!-- Floating Webcam & Hand Tracking Panel -->
+    <aside id="camera-container" class="hidden" aria-label="Webcam Gesture Tracker">
+      <div class="camera-header">
+        <div class="camera-header-left">
+          <span class="live-dot"></span>
+          <span>NEURAL VISION</span>
+        </div>
+        <button id="btn-toggle-cam" class="btn-cam-toggle" title="Minimize / Expand Camera">▼</button>
+      </div>
+      <div class="camera-viewport">
+        <video id="webcam-video" autoplay playsinline muted></video>
+        <canvas id="webcam-canvas"></canvas>
+      </div>
+      <div class="camera-footer">
+        <span id="hand-status-badge" class="status-badge not-detected">No hand detected</span>
+        <span id="gesture-badge" class="gesture-badge">Gesture: NONE</span>
+        <span id="multi-hand-notice" class="multi-hand-notice" style="display: none;">Primary hand active</span>
+      </div>
+    </aside>
+
+    <!-- In-Game HUD -->
+    <header id="in-game-hud" class="hidden">
+      <div class="hud-left">
+        <div class="hud-brand">
+          <span class="hud-logo">AIRRUNNER</span>
+        </div>
+        <div class="hud-stats-grid">
+          <div class="hud-card">
+            <span class="hud-label">Score</span>
+            <span id="hud-score" class="hud-val accent-cyan">000000</span>
+          </div>
+          <div class="hud-card">
+            <span class="hud-label">High Score</span>
+            <span id="hud-high-score" class="hud-val">000000</span>
+          </div>
+          <div class="hud-card">
+            <span class="hud-label">Distance</span>
+            <span id="hud-distance" class="hud-val">0000m</span>
+          </div>
+          <div class="hud-card">
+            <span class="hud-label">Speed</span>
+            <span id="hud-speed" class="hud-val accent-yellow">1.0x</span>
+          </div>
+          <div class="hud-card" style="grid-column: span 2;">
+            <span class="hud-label">Coins Collected</span>
+            <span id="hud-coins" class="hud-val accent-yellow">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Centered Gesture Indicator -->
+      <div class="hud-center">
+        <div class="hud-gesture-pill">
+          <span class="hud-label">Gesture:</span>
+          <span id="hud-current-gesture" class="hud-gesture-val">NONE</span>
+        </div>
+      </div>
+
+      <!-- Controls Right -->
+      <div class="hud-right-controls">
+        <button id="btn-toggle-mute" class="hud-btn" title="Mute/Unmute Audio">🔊</button>
+        <button id="btn-pause" class="hud-btn" title="Pause Game">⏸</button>
+      </div>
+    </header>
+
+    <!-- Start Screen -->
+    <section id="start-screen">
+      <div class="start-brand-badge">
+        <span>⚡ Real-Time MediaPipe Hand Tracking</span>
+      </div>
+      <h1 class="start-title">AIRRUNNER</h1>
+      <p class="start-subtitle">Move Your Hand. Control the Game. No Controller Required.</p>
+      
+      <div class="start-button-group">
+        <button id="btn-start-game" class="btn-cyber">START GAME</button>
+        <button id="btn-how-to-play" class="btn-cyber-secondary">HOW TO PLAY</button>
+        <button id="btn-settings" class="btn-cyber-secondary">SETTINGS</button>
+      </div>
+
+      <div class="start-footer-links">
+        <a href="login.html">Pilot Portal</a>
+        <a href="frontbasic.html">Diagnostic Feed</a>
+      </div>
+    </section>
+
+    <!-- How To Play Modal -->
+    <div id="how-to-play-modal" class="modal-backdrop hidden">
+      <div class="modal-card">
+        <h2 class="modal-title">Gesture Controls</h2>
+        <p class="modal-subtitle">Hold your hand naturally in front of your webcam. Perform crisp movements to trigger actions.</p>
+        
+        <div class="gesture-grid">
+          <div class="gesture-card">
+            <div class="gesture-icon">↑</div>
+            <div class="gesture-info">
+              <h4>JUMP</h4>
+              <p>Move hand upward rapidly</p>
+            </div>
+          </div>
+          <div class="gesture-card">
+            <div class="gesture-icon">↓</div>
+            <div class="gesture-info">
+              <h4>SLIDE</h4>
+              <p>Move hand downward swiftly</p>
+            </div>
+          </div>
+          <div class="gesture-card">
+            <div class="gesture-icon">←</div>
+            <div class="gesture-info">
+              <h4>MOVE LEFT</h4>
+              <p>Shift hand to the left</p>
+            </div>
+          </div>
+          <div class="gesture-card">
+            <div class="gesture-icon">→</div>
+            <div class="gesture-info">
+              <h4>MOVE RIGHT</h4>
+              <p>Shift hand to the right</p>
+            </div>
+          </div>
+          <div class="gesture-card" style="grid-column: span 2;">
+            <div class="gesture-icon">🤏</div>
+            <div class="gesture-info">
+              <h4>ROLL</h4>
+              <p>Pinch Thumb + Index finger tips together</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Interactive Practice Sandbox -->
+        <div class="practice-sandbox">
+          <p>Live Gesture Practice Sandbox (Move hand in camera):</p>
+          <span id="practice-gesture-display" class="practice-tag">NONE</span>
+        </div>
+
+        <button id="btn-close-how-to" class="btn-cyber" style="width: 100%;">GOT IT</button>
+      </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-backdrop hidden">
+      <div class="modal-card">
+        <h2 class="modal-title">Flight Settings</h2>
+        <p class="modal-subtitle">Calibrate gesture recognition and system parameters.</p>
+
+        <div class="settings-form">
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Gesture Sensitivity</div>
+              <div class="setting-desc">Movement distance needed to trigger actions</div>
+            </div>
+            <div class="setting-control">
+              <select id="setting-sensitivity">
+                <option value="LOW">Low (Larger Swipes)</option>
+                <option value="NORMAL" selected>Normal (Balanced)</option>
+                <option value="HIGH">High (Light Flicks)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Audio Volume</div>
+              <div class="setting-desc">Master sound effects and audio level</div>
+            </div>
+            <div class="setting-control">
+              <input type="range" id="setting-volume" min="0" max="100" value="70">
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Procedural Synthwave Beat</div>
+              <div class="setting-desc">Real-time dynamic cyberpunk bass groove</div>
+            </div>
+            <div class="setting-control">
+              <input type="checkbox" id="setting-synth-music" checked>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Keyboard Fallback</div>
+              <div class="setting-desc">Allow Arrow Keys / WASD for accessibility</div>
+            </div>
+            <div class="setting-control">
+              <input type="checkbox" id="setting-keyboard" checked>
+            </div>
+          </div>
+
+          <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+            <div>
+              <div class="setting-label">Gemini AI API Key (Optional)</div>
+              <div class="setting-desc">Unlocks generative cyberpunk coach debriefs. The core game works 100% offline without a key.</div>
+            </div>
+            <div class="setting-control" style="width: 100%;">
+              <input type="text" id="setting-gemini-key" placeholder="Enter Gemini API Key..." style="width: 100%;">
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button id="btn-save-settings" class="btn-cyber">SAVE CHANGES</button>
+          <button id="btn-close-settings" class="btn-cyber-secondary">CANCEL</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Countdown Modal -->
+    <div id="countdown-modal" class="modal-backdrop hidden">
+      <div class="countdown-number" id="countdown-text">3</div>
+    </div>
+
+    <!-- Pause Modal -->
+    <div id="pause-modal" class="modal-backdrop hidden">
+      <div class="modal-card" style="text-align: center;">
+        <h2 class="modal-title">GAME PAUSED</h2>
+        <p class="modal-subtitle">Neural link suspended.</p>
+
+        <div class="start-button-group" style="margin: 0 auto;">
+          <button id="btn-resume" class="btn-cyber">RESUME</button>
+          <button id="btn-restart" class="btn-cyber-secondary">RESTART</button>
+          <button id="btn-pause-quit" class="btn-cyber-secondary">MAIN MENU</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div id="game-over-modal" class="modal-backdrop hidden">
+      <div class="modal-card">
+        <h2 class="modal-title" style="color: var(--neon-pink);">GAME OVER</h2>
+        <p class="modal-subtitle">Neural synchronization severed.</p>
+
+        <div class="game-over-stats">
+          <div class="go-stat-card">
+            <span class="go-stat-label">Final Score <span id="new-record-badge" class="record-badge">NEW RECORD!</span></span>
+            <div id="final-score" class="go-stat-val">000000</div>
+          </div>
+          <div class="go-stat-card">
+            <span class="go-stat-label">High Score</span>
+            <div id="final-high-score" class="go-stat-val" style="color: var(--neon-yellow);">000000</div>
+          </div>
+          <div class="go-stat-card">
+            <span class="go-stat-label">Distance Reached</span>
+            <div id="final-distance" class="go-stat-val" style="color: var(--neon-cyan);">0m</div>
+          </div>
+          <div class="go-stat-card">
+            <span class="go-stat-label">Coins Collected</span>
+            <div id="final-coins" class="go-stat-val" style="color: var(--neon-green);">0</div>
+          </div>
+        </div>
+
+        <!-- AI Coach Debrief -->
+        <div class="ai-coach-card">
+          <div id="ai-coach-text">Analyzing neural telemetry...</div>
+        </div>
+
+        <div class="modal-actions">
+          <button id="btn-play-again" class="btn-cyber">PLAY AGAIN</button>
+          <button id="btn-game-over-menu" class="btn-cyber-secondary">MAIN MENU</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Main Game JavaScript Module -->
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>
