@@ -1,198 +1,174 @@
-/* AirRunner Auth UI - Based on Mockup */
+/* AirRunner Auth UI - Redesigned to be simple and practical */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  font-family: 'Inter', sans-serif;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
 body {
-  background-color: #0d1117;
-  color: #fff;
+  background-color: #f4f6f8;
+  color: #333;
   height: 100vh;
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .split-container {
   display: flex;
-  height: 100vh;
-  width: 100vw;
+  width: 100%;
+  max-width: 900px;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  overflow: hidden;
 }
 
 /* Left Hero Section */
 .hero-section {
-  flex: 6; /* Approx 60-70% */
-  background: url('https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80&w=2070&auto=format&fit=crop') no-repeat center center;
-  background-size: cover;
-  position: relative;
-}
-
-.hero-section::after {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: linear-gradient(to right, rgba(13, 17, 23, 0.2), rgba(28, 38, 56, 0.9));
-}
-
-/* Right Auth Section */
-.auth-section {
-  flex: 4;
-  background-color: #1c2638; /* Dark blue from mockup */
+  flex: 1;
+  background: #e2e8f0;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 40px;
-  position: relative;
-  z-index: 2;
+}
+
+/* Right Auth Section */
+.auth-section {
+  flex: 1;
+  padding: 40px;
 }
 
 .auth-form-container {
   width: 100%;
-  max-width: 380px;
 }
 
 h2 {
-  font-size: 28px;
-  font-weight: 700;
-  margin-bottom: 30px;
-  color: #ffaa00; /* Orange highlight */
+  font-size: 24px;
+  margin-bottom: 20px;
+  color: #1a202c;
 }
 
 h2 .highlight {
-  font-size: 22px;
-  font-weight: 400;
-  color: #a0aec0;
+  font-size: 14px;
+  font-weight: normal;
+  color: #718096;
   display: block;
   margin-top: 5px;
 }
 
 .input-group {
-  margin-bottom: 20px;
+  margin-bottom: 15px;
 }
 
 .input-group label {
   display: block;
   font-size: 14px;
-  color: #ffaa00;
-  margin-bottom: 8px;
+  color: #4a5568;
+  margin-bottom: 5px;
 }
 
 .input-group input {
   width: 100%;
-  padding: 12px 15px;
-  background: transparent;
-  border: 1px solid #4a5568;
-  border-radius: 6px;
-  color: #fff;
-  font-size: 16px;
-  outline: none;
-  transition: border-color 0.3s;
+  padding: 10px;
+  border: 1px solid #cbd5e0;
+  border-radius: 4px;
+  font-size: 14px;
 }
 
 .input-group input:focus {
-  border-color: #ffaa00;
+  border-color: #3182ce;
+  outline: none;
 }
 
 .btn-primary {
   width: 100%;
-  padding: 14px;
-  background: linear-gradient(90deg, #ff8c00, #ff5e00);
+  padding: 12px;
+  background: #3182ce;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
   color: #fff;
   font-size: 16px;
-  font-weight: 600;
   cursor: pointer;
   margin-top: 10px;
-  transition: opacity 0.3s, transform 0.1s;
 }
 
 .btn-primary:hover {
-  opacity: 0.9;
-}
-.btn-primary:active {
-  transform: scale(0.98);
+  background: #2b6cb0;
 }
 
 .toggle-mode {
   text-align: center;
-  margin-top: 20px;
+  margin-top: 15px;
   font-size: 14px;
-  color: #a0aec0;
+  color: #718096;
 }
 
 .toggle-mode a {
-  color: #ffaa00;
+  color: #3182ce;
   text-decoration: none;
-  font-weight: 600;
 }
 
 .social-login {
-  margin-top: 30px;
+  margin-top: 20px;
   display: flex;
+  justify-content: center;
   gap: 15px;
-  color: #ffaa00;
-  font-size: 24px;
+  color: #4a5568;
+  font-size: 20px;
 }
 
 .social-login i {
   cursor: pointer;
-  transition: color 0.3s;
-}
-
-.social-login i:hover {
-  color: #fff;
 }
 
 /* OTP Modal */
 .modal-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s;
+  display: none;
 }
 
 .modal-overlay.active {
-  opacity: 1;
-  pointer-events: auto;
+  display: flex;
 }
 
 .modal-content {
-  background: #1c2638;
-  padding: 30px;
+  background: #fff;
+  padding: 20px;
   border-radius: 8px;
   width: 100%;
   max-width: 400px;
   text-align: center;
-  border: 1px solid #4a5568;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
 .modal-content h3 {
-  color: #ffaa00;
+  color: #1a202c;
   margin-bottom: 10px;
 }
 
 .modal-content p {
-  color: #a0aec0;
-  margin-bottom: 20px;
+  color: #718096;
+  margin-bottom: 15px;
   font-size: 14px;
 }
 
 .modal-content #otp-code {
   text-align: center;
-  letter-spacing: 4px;
-  font-size: 24px;
-  font-weight: 700;
+  font-size: 18px;
+  padding: 10px;
 }
 
 .error-msg {
-  color: #ff3366;
-  margin-top: 15px;
+  color: #e53e3e;
+  margin-top: 10px;
   font-size: 14px;
 }

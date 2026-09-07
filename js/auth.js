@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
   let currentEmail = '';
 
-  const API_URL = 'http://localhost:3000/api/auth'; // Ensure backend is running here
+  const API_URL = 'http://localhost:8000/api/auth'; // Ensure backend is running here
 
   // Toggle Mode (Signup vs Sign In)
   toggleLink.addEventListener('click', (e) => {
@@ -83,10 +83,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      // Success! Show OTP Modal
+      // Success! Bypassing OTP, log them in directly
       console.log(data.message);
-      otpModal.classList.add('active');
       
+      // Save Token and user data
+      localStorage.setItem('airrunner_token', data.token);
+      localStorage.setItem('airrunner_pilotName', data.pilotName);
+      localStorage.setItem('airrunner_gamerId', data.gamerId);
+      
+      // Redirect to Game Portal
+      window.location.href = 'portal.html';
     } catch (error) {
       console.error('Error during auth:', error);
       alert('Cannot connect to the server. Is it running?');
