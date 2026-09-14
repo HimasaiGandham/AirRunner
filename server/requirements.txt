@@ -5,3 +5,4 @@ PyJWT
 pydantic
 python-dotenv
 email-validator
+pymongo

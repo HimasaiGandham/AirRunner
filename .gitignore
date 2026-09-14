@@ -1,0 +1,9 @@
+# Dependencies and caches
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Local secrets
+.env

@@ -1,151 +1,172 @@
+"""AirRunner API: pilot accounts, run scores and the leaderboard, stored in MongoDB."""
+
 import os
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from datetime import datetime, timedelta
-import random
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+from typing import Annotated
+
 import bcrypt
 import jwt
-from fastapi import FastAPI, HTTPException, status
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr
-from typing import Optional
+from bson import ObjectId
+from bson.errors import InvalidId
 from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import AfterValidator, BaseModel, BeforeValidator, EmailStr, Field
+from pymongo import ASCENDING, DESCENDING, MongoClient
+from pymongo.errors import DuplicateKeyError
 
-# Load environment variables
 load_dotenv()
 
-app = FastAPI()
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET is not set. Copy server/.env.example to server/.env and fill it in.")
 
-# Enable CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
-    allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
-)
+TOKEN_TTL = timedelta(hours=1)
+LEADERBOARD_MAX = 50
 
-# Configuration
-JWT_SECRET = os.getenv("JWT_SECRET", "supersecretjwtkey_replace_in_prod")
-SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
-SMTP_USERNAME = os.getenv("SMTP_USERNAME")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+client = MongoClient(os.getenv("MONGO_URI", "mongodb://localhost:27017"), serverSelectionTimeoutMS=5000)
+db = client[os.getenv("MONGO_DB", "airrunner")]
 
-# In-Memory Database (List of dictionaries)
-users_db = []
 
-# Pydantic Models for Request Bodies
+def ensure_indexes(database):
+    database.users.create_index("email", unique=True)
+    database.users.create_index("gamerIdLower", unique=True)  # "Neo" and "neo" are the same Gamer ID
+    database.scores.create_index([("score", DESCENDING), ("achievedAt", ASCENDING)])
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    # Doubles as a startup check: fails within 5s with a clear error if MongoDB isn't reachable
+    ensure_indexes(db)
+    yield
+
+
+app = FastAPI(title="AirRunner API", lifespan=lifespan)
+
+# Tokens travel in the Authorization header, not cookies, so any origin may call the API
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+
+def _strip(value):
+    return value.strip() if isinstance(value, str) else value
+
+
+def _fits_bcrypt(password: str) -> str:
+    # bcrypt only reads 72 bytes, and bcrypt>=5 raises on anything longer
+    if len(password.encode("utf-8")) > 72:
+        raise ValueError("Password must be at most 72 bytes")
+    return password
+
+
+Name = Annotated[str, BeforeValidator(_strip)]
+Email = Annotated[EmailStr, AfterValidator(lambda email: email.lower())]
+Password = Annotated[str, AfterValidator(_fits_bcrypt)]
+
+
 class SignupRequest(BaseModel):
-    pilotName: str
-    gamerId: str
-    email: EmailStr
-    password: str
+    pilotName: Annotated[Name, Field(min_length=3, max_length=40)]
+    gamerId: Annotated[Name, Field(min_length=3, max_length=30)]
+    email: Email
+    password: Annotated[Password, Field(min_length=8)]
+
 
 class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-class VerifyOTPRequest(BaseModel):
-    email: EmailStr
-    otp: str
-
-# Helper Functions (OTP removed)
+    email: Email
+    password: Password
 
 
-# Routes
+class ScoreRequest(BaseModel):
+    score: int = Field(ge=0)
+    distance: int = Field(ge=0)
+    coinsCollected: int = Field(ge=0)
+
+
+# Checked when the email is unknown, so response time doesn't reveal which emails are registered
+_DUMMY_HASH = bcrypt.hashpw(b"airrunner-unknown-user", bcrypt.gensalt())
+
+
+def _session_for(user):
+    claims = {"sub": str(user["_id"]), "gamerId": user["gamerId"], "exp": datetime.now(timezone.utc) + TOKEN_TTL}
+    return {
+        "token": jwt.encode(claims, JWT_SECRET, algorithm="HS256"),
+        "pilotName": user["pilotName"],
+        "gamerId": user["gamerId"],
+    }
+
+
+def current_user(authorization: Annotated[str | None, Header()] = None):
+    scheme, _, token = (authorization or "").partition(" ")
+    user = None
+    if scheme.lower() == "bearer" and token:
+        try:
+            claims = jwt.decode(token, JWT_SECRET, algorithms=["HS256"], options={"require": ["exp", "sub"]})
+            user = db.users.find_one({"_id": ObjectId(claims["sub"])})
+        except (jwt.InvalidTokenError, InvalidId):
+            pass
+    if not user:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired or invalid. Please sign in again.")
+    return user
+
+
 @app.get("/api/health")
-def health_check():
-    return {"status": "ok", "message": "AirRunner FastAPI backend is running"}
+def health():
+    return {"status": "ok"}
 
-@app.post("/api/auth/signup")
+
+@app.post("/api/auth/signup", status_code=status.HTTP_201_CREATED)
 def signup(req: SignupRequest):
-    # Check if user exists
-    for u in users_db:
-        if u["email"] == req.email or u["gamerId"] == req.gamerId:
-            raise HTTPException(status_code=400, detail="User with this email or Gamer ID already exists.")
-
-    # Hash password
-    salt = bcrypt.gensalt()
-    hashed_password = bcrypt.hashpw(req.password.encode('utf-8'), salt).decode('utf-8')
-
-    new_user = {
-        "id": str(int(datetime.utcnow().timestamp() * 1000)),
+    user = {
         "pilotName": req.pilotName,
         "gamerId": req.gamerId,
+        "gamerIdLower": req.gamerId.lower(),
         "email": req.email,
-        "passwordHash": hashed_password,
-        "isVerified": True  # OTP bypassed
+        "passwordHash": bcrypt.hashpw(req.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
+        "createdAt": datetime.now(timezone.utc),
     }
+    try:
+        db.users.insert_one(user)  # sets user["_id"]
+    except DuplicateKeyError:
+        raise HTTPException(status.HTTP_409_CONFLICT, "That email or Gamer ID is already registered.") from None
+    return _session_for(user)
 
-    users_db.append(new_user)
-
-    token_payload = {
-        "id": new_user["id"],
-        "gamerId": new_user["gamerId"],
-        "exp": datetime.utcnow() + timedelta(hours=1)
-    }
-    token = jwt.encode(token_payload, JWT_SECRET, algorithm="HS256")
-
-    return {
-        "message": "Signup successful",
-        "token": token,
-        "pilotName": new_user["pilotName"],
-        "gamerId": new_user["gamerId"]
-    }
 
 @app.post("/api/auth/login")
 def login(req: LoginRequest):
-    user = next((u for u in users_db if u["email"] == req.email), None)
-    if not user:
-        raise HTTPException(status_code=400, detail="Invalid credentials.")
+    user = db.users.find_one({"email": req.email})
+    stored_hash = user["passwordHash"].encode("utf-8") if user else _DUMMY_HASH
+    password_ok = bcrypt.checkpw(req.password.encode("utf-8"), stored_hash)
+    if not (user and password_ok):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password.")
+    return _session_for(user)
 
-    # Verify password
-    if not bcrypt.checkpw(req.password.encode('utf-8'), user["passwordHash"].encode('utf-8')):
-        raise HTTPException(status_code=400, detail="Invalid credentials.")
 
-    token_payload = {
-        "id": user["id"],
-        "gamerId": user["gamerId"],
-        "exp": datetime.utcnow() + timedelta(hours=1)
-    }
-    token = jwt.encode(token_payload, JWT_SECRET, algorithm="HS256")
+# ponytail: scores are reported by the browser and can be faked; add server-side run verification if cheating matters
+@app.post("/api/scores", status_code=status.HTTP_201_CREATED)
+def submit_score(req: ScoreRequest, user: Annotated[dict, Depends(current_user)]):
+    db.scores.insert_one(
+        {"userId": user["_id"], "gamerId": user["gamerId"], **req.model_dump(), "achievedAt": datetime.now(timezone.utc)}
+    )
+    return {"message": "Score saved"}
 
-    return {
-        "message": "Login successful",
-        "token": token,
-        "pilotName": user.get("pilotName", ""),
-        "gamerId": user.get("gamerId", "")
-    }
 
-@app.post("/api/auth/verify-otp")
-def verify_otp(req: VerifyOTPRequest):
-    user = next((u for u in users_db if u["email"] == req.email), None)
-    if not user:
-        raise HTTPException(status_code=400, detail="User not found.")
-
-    if user["otp"] != req.otp:
-        raise HTTPException(status_code=400, detail="Invalid OTP.")
-
-    if user["otpExpiresAt"] < datetime.utcnow():
-        raise HTTPException(status_code=400, detail="OTP has expired.")
-
-    # OTP Valid
-    user["isVerified"] = True
-    user["otp"] = None
-    user["otpExpiresAt"] = None
-
-    token_payload = {
-        "id": user["id"],
-        "gamerId": user["gamerId"],
-        "exp": datetime.utcnow() + timedelta(hours=1)
-    }
-    token = jwt.encode(token_payload, JWT_SECRET, algorithm="HS256")
-
-    return {
-        "message": "Verification successful",
-        "token": token,
-        "pilotName": user["pilotName"],
-        "gamerId": user["gamerId"]
-    }
+@app.get("/api/leaderboard")
+def leaderboard(limit: Annotated[int, Query(ge=1, le=LEADERBOARD_MAX)] = 10):
+    # Each player's best run, highest first; the earlier run wins a tie
+    rows = db.scores.aggregate(
+        [
+            {"$sort": {"score": -1, "achievedAt": 1}},
+            {
+                "$group": {
+                    "_id": "$userId",
+                    "gamerId": {"$first": "$gamerId"},
+                    "score": {"$first": "$score"},
+                    "distance": {"$first": "$distance"},
+                    "achievedAt": {"$first": "$achievedAt"},
+                }
+            },
+            {"$sort": {"score": -1, "achievedAt": 1}},
+            {"$limit": limit},
+        ]
+    )
+    return [{"gamerId": row["gamerId"], "score": row["score"], "distance": row["distance"]} for row in rows]
