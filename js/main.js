@@ -9,6 +9,7 @@ import { GameEngine, GameState } from './game.js';
 import { HandTracker } from './handTracking.js';
 import { audio } from './audio.js';
 import { aiCoach } from './aiCoach.js';
+import { api, getSession } from './session.js';
 
 // Cross-browser polyfill for CanvasRenderingContext2D.roundRect
 if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
@@ -30,7 +31,8 @@ if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D
 }
 
 class AirRunnerApp {
-  constructor() {
+  constructor(session) {
+    this.session = session;
     this.initElements();
     this.initSettings();
     this.initGameEngine();
@@ -172,7 +174,16 @@ class AirRunnerApp {
       pauseModal: this.pauseModal
     });
 
+    this.game.onRunEnd = (run) => this.submitScore(run);
     this.game.startLoop();
+  }
+
+  submitScore({ score, distance, coins }) {
+    api('/scores', {
+      method: 'POST',
+      token: this.session.token,
+      body: { score, distance, coinsCollected: coins }
+    }).catch((err) => this.showToast(`Score not saved: ${err.message}`, true));
   }
 
   initHandTracking() {
@@ -222,10 +233,6 @@ class AirRunnerApp {
         }
       }
     };
-
-    this.tracker.onError = (errMsg) => {
-      this.showToast(errMsg, true);
-    };
   }
 
   handleGestureAction(gesture) {
@@ -256,36 +263,36 @@ class AirRunnerApp {
       this.btnStartGame.disabled = true;
       this.btnStartGame.innerText = 'INITIALIZING CAMERA...';
 
+      // Reuses the camera if an earlier run or the How To Play sandbox already started it
       try {
-        await this.tracker.loadModel();
-        await this.tracker.startCamera();
-
-        this.startScreen.classList.add('hidden');
-        this.inGameHUD.classList.remove('hidden');
+        await this.tracker.start();
         this.cameraContainer.classList.remove('hidden');
-
-        this.game.startCountdown();
       } catch (err) {
         console.error("Camera startup error:", err);
-        this.btnStartGame.disabled = false;
-        this.btnStartGame.innerText = 'START GAME';
-        this.showToast("Webcam access required. Please allow camera permissions.", true);
+        if (!this.settings.keyboardFallback) {
+          this.btnStartGame.disabled = false;
+          this.btnStartGame.innerText = 'START GAME';
+          this.showToast(`${err.message} Turn on Keyboard Fallback in Settings to play without a camera.`, true);
+          return;
+        }
+        this.showToast(`${err.message} Playing with keyboard: arrows/WASD, Space to jump, Shift to roll.`, true);
       }
+
+      this.startScreen.classList.add('hidden');
+      this.inGameHUD.classList.remove('hidden');
+      this.game.startCountdown();
     });
 
     // How To Play
     this.btnHowToPlay.addEventListener('click', async () => {
       audio.init();
       this.howToPlayModal.classList.remove('hidden');
-      // If camera is not running, pre-load so user can test gestures in sandbox
-      if (!this.tracker.isTracking) {
-        try {
-          await this.tracker.loadModel();
-          await this.tracker.startCamera();
-          this.cameraContainer.classList.remove('hidden');
-        } catch (e) {
-          console.log("Practice camera skipped until start:", e);
-        }
+      // Start the camera (if it isn't already) so the user can test gestures in the sandbox
+      try {
+        await this.tracker.start();
+        this.cameraContainer.classList.remove('hidden');
+      } catch (e) {
+        console.log("Practice camera skipped until start:", e);
       }
     });
 
@@ -431,7 +438,12 @@ class AirRunnerApp {
   }
 }
 
-// Bootstrap once DOM is ready
-window.addEventListener('DOMContentLoaded', () => {
-  new AirRunnerApp();
-});
+// The game is for signed-in pilots only, so every run can be saved to their account
+const session = getSession();
+if (session) {
+  window.addEventListener('DOMContentLoaded', () => {
+    new AirRunnerApp(session);
+  });
+} else {
+  window.location.replace('login.html');
+}

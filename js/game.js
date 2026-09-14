@@ -53,6 +53,9 @@ export class GameEngine {
     };
     this.fatalObstacle = null;
 
+    // Called with { score, distance, coins } when a run ends
+    this.onRunEnd = null;
+
     // Animation loop
     this.lastFrameTime = performance.now();
     this.animationId = null;
@@ -151,6 +154,10 @@ export class GameEngine {
       isNewHigh = true;
     }
 
+    if (this.onRunEnd) {
+      this.onRunEnd({ score: this.score, distance: Math.floor(this.distance), coins: this.coins });
+    }
+
     // Populate Game Over HUD
     if (this.hud.finalScore) this.hud.finalScore.innerText = this.score.toString().padStart(6, '0');
     if (this.hud.finalHighScore) this.hud.finalHighScore.innerText = this.highScore.toString().padStart(6, '0');
@@ -183,8 +190,10 @@ export class GameEngine {
           <span class="coach-rank" style="color: ${debrief.color}">[RANK ${debrief.rank}] ${debrief.title}</span>
           ${debrief.isAiGenerated ? '<span class="ai-badge">Gemini AI</span>' : '<span class="ai-badge neural">Cyber Neural</span>'}
         </div>
-        <p class="coach-body">${debrief.summary}</p>
+        <p class="coach-body"></p>
       `;
+      // Gemini output is untrusted text, so never parse it as HTML
+      this.hud.aiCoachText.querySelector('.coach-body').textContent = debrief.summary;
     }
   }
 

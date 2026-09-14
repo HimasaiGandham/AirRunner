@@ -85,6 +85,12 @@ export const CONFIG = {
     SYNTH_BASS_ENABLED: true
   },
 
+  // Optional Gemini coach. The -latest alias tracks Google's current Flash model,
+  // so it keeps working as older model versions are shut down.
+  AI: {
+    GEMINI_MODEL: 'gemini-flash-latest'
+  },
+
   // Storage Keys
   STORAGE: {
     HIGH_SCORE: 'airrunner_high_score',

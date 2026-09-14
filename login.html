@@ -3,11 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AirRunner - Game Portal</title>
+  <title>AirRunner - Sign In</title>
   <link rel="stylesheet" href="css/auth.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-  <!-- Font Awesome for icons -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
 
@@ -20,60 +17,42 @@
     <!-- Right Side: Auth Form -->
     <div class="auth-section">
       <div class="auth-form-container">
-        
+
         <h2 id="auth-title">Sign Up <span class="highlight">to unleash the gamer within you!</span></h2>
-        
+
         <form id="auth-form">
-          <div class="input-group" id="group-name">
+          <div class="input-group">
             <label for="pilotName">Name</label>
-            <input type="text" id="pilotName" placeholder="Your Name">
+            <input type="text" id="pilotName" required minlength="3" maxlength="40" autocomplete="name" placeholder="Your Name">
           </div>
-          
-          <div class="input-group" id="group-gamerId">
+
+          <div class="input-group">
             <label for="gamerId">Gamer Id</label>
-            <input type="text" id="gamerId" placeholder="Unique Gamer ID">
+            <input type="text" id="gamerId" required minlength="3" maxlength="30" autocomplete="username" placeholder="Unique Gamer ID">
           </div>
 
           <div class="input-group">
             <label for="email">Email</label>
-            <input type="email" id="email" required placeholder="your@email.com">
+            <input type="email" id="email" required autocomplete="email" placeholder="your@email.com">
           </div>
 
           <div class="input-group">
             <label for="password">Password</label>
-            <input type="password" id="password" required placeholder="••••••••">
+            <input type="password" id="password" required minlength="8" autocomplete="new-password" placeholder="••••••••">
           </div>
+
+          <p class="error-msg" id="auth-error" role="alert"></p>
 
           <button type="submit" class="btn-primary" id="submit-btn">Sign Up</button>
-          
+
           <div class="toggle-mode">
-            <p id="toggle-text">Already have an account? <a href="#" id="toggle-link">Sign In</a></p>
+            <p><span id="toggle-prompt">Already have an account?</span> <a href="#" id="toggle-link">Sign In</a></p>
           </div>
         </form>
-
-        <div class="social-login">
-          <i class="fab fa-facebook-square"></i>
-          <i class="fab fa-google"></i>
-        </div>
       </div>
     </div>
   </div>
 
-  <!-- OTP Modal (Hidden by default) -->
-  <div class="modal-overlay" id="otp-modal">
-    <div class="modal-content">
-      <h3>Email Verification</h3>
-      <p>We've sent a 6-digit OTP to your email. Enter it below to verify.</p>
-      <form id="otp-form">
-        <div class="input-group">
-          <input type="text" id="otp-code" maxlength="6" required placeholder="000000">
-        </div>
-        <button type="submit" class="btn-primary">Verify OTP</button>
-      </form>
-      <p class="error-msg" id="otp-error"></p>
-    </div>
-  </div>
-
-  <script src="js/auth.js"></script>
+  <script type="module" src="js/auth.js"></script>
 </body>
 </html>

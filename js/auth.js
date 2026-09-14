@@ -1,137 +1,74 @@
-document.addEventListener('DOMContentLoaded', () => {
-  let isLoginMode = false;
-  
-  const authTitle = document.getElementById('auth-title');
-  const authForm = document.getElementById('auth-form');
-  const submitBtn = document.getElementById('submit-btn');
-  const toggleLink = document.getElementById('toggle-link');
-  const toggleText = document.getElementById('toggle-text');
-  
-  // Fields that are hidden in Login mode
-  const groupName = document.getElementById('group-name');
-  const groupGamerId = document.getElementById('group-gamerId');
-  
-  // OTP Modal Elements
-  const otpModal = document.getElementById('otp-modal');
-  const otpForm = document.getElementById('otp-form');
-  const otpError = document.getElementById('otp-error');
-  
-  let currentEmail = '';
+import { api, getSession, saveSession } from './session.js';
 
-  const API_URL = 'http://localhost:8000/api/auth'; // Ensure backend is running here
+// Already signed in: go straight to the portal
+if (getSession()) window.location.replace('portal.html');
 
-  // Toggle Mode (Signup vs Sign In)
-  toggleLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    isLoginMode = !isLoginMode;
-    
-    if (isLoginMode) {
-      // Switch to Login
-      authTitle.innerHTML = 'Sign In <span class="highlight">to continue your journey</span>';
-      submitBtn.innerText = 'Sign In';
-      toggleText.innerHTML = 'New here? <a href="#" id="toggle-link">Sign Up</a>';
-      
-      groupName.style.display = 'none';
-      groupGamerId.style.display = 'none';
-      
-      document.getElementById('pilotName').required = false;
-      document.getElementById('gamerId').required = false;
-    } else {
-      // Switch to Signup
-      authTitle.innerHTML = 'Sign Up <span class="highlight">to unleash the gamer within you!</span>';
-      submitBtn.innerText = 'Sign Up';
-      toggleText.innerHTML = 'Already have an account? <a href="#" id="toggle-link">Sign In</a>';
-      
-      groupName.style.display = 'block';
-      groupGamerId.style.display = 'block';
-      
-      document.getElementById('pilotName').required = true;
-      document.getElementById('gamerId').required = true;
-    }
-    
-    // Reattach listener to the newly created toggle link
-    document.getElementById('toggle-link').addEventListener('click', arguments.callee);
-  });
+const MODES = {
+  signup: {
+    title: 'Sign Up <span class="highlight">to unleash the gamer within you!</span>',
+    button: 'Sign Up',
+    prompt: 'Already have an account?',
+    link: 'Sign In',
+    endpoint: '/auth/signup'
+  },
+  login: {
+    title: 'Sign In <span class="highlight">to continue your journey</span>',
+    button: 'Sign In',
+    prompt: 'New here?',
+    link: 'Sign Up',
+    endpoint: '/auth/login'
+  }
+};
 
-  // Handle Auth Submit
-  authForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const email = document.getElementById('email').value;
-    const password = document.getElementById('password').value;
-    currentEmail = email; // Store for OTP step
+const $ = (id) => document.getElementById(id);
+const signupOnlyInputs = [$('pilotName'), $('gamerId')];
+const passwordInput = $('password');
+const submitBtn = $('submit-btn');
+const errorMsg = $('auth-error');
+let mode = 'signup';
 
-    const payload = { email, password };
-    
-    if (!isLoginMode) {
-      payload.pilotName = document.getElementById('pilotName').value;
-      payload.gamerId = document.getElementById('gamerId').value;
-    }
+function render() {
+  const m = MODES[mode];
+  const isLogin = mode === 'login';
 
-    try {
-      const endpoint = isLoginMode ? '/login' : '/signup';
-      const res = await fetch(`${API_URL}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      
-      const data = await res.json();
-      
-      if (!res.ok) {
-        alert(data.error || 'Authentication failed');
-        return;
-      }
-      
-      // Success! Bypassing OTP, log them in directly
-      console.log(data.message);
-      
-      // Save Token and user data
-      localStorage.setItem('airrunner_token', data.token);
-      localStorage.setItem('airrunner_pilotName', data.pilotName);
-      localStorage.setItem('airrunner_gamerId', data.gamerId);
-      
-      // Redirect to Game Portal
-      window.location.href = 'portal.html';
-    } catch (error) {
-      console.error('Error during auth:', error);
-      alert('Cannot connect to the server. Is it running?');
-    }
-  });
+  $('auth-title').innerHTML = m.title;
+  submitBtn.textContent = m.button;
+  $('toggle-prompt').textContent = m.prompt;
+  $('toggle-link').textContent = m.link;
 
-  // Handle OTP Submit
-  otpForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const otp = document.getElementById('otp-code').value;
-    
-    try {
-      const res = await fetch(`${API_URL}/verify-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: currentEmail, otp })
-      });
-      
-      const data = await res.json();
-      
-      if (!res.ok) {
-        otpError.innerText = data.error || 'Invalid OTP';
-        return;
-      }
-      
-      // Verification Successful!
-      otpError.innerText = '';
-      
-      // Save Token and user data
-      localStorage.setItem('airrunner_token', data.token);
-      localStorage.setItem('airrunner_pilotName', data.pilotName);
-      localStorage.setItem('airrunner_gamerId', data.gamerId);
-      
-      // Redirect to Game Portal
-      window.location.href = 'portal.html';
-      
-    } catch (error) {
-      console.error('Error during OTP verification:', error);
-      otpError.innerText = 'Cannot connect to server to verify OTP.';
-    }
-  });
+  for (const input of signupOnlyInputs) {
+    input.disabled = isLogin; // disabled fields are skipped by form validation
+    input.closest('.input-group').hidden = isLogin;
+  }
+  passwordInput.minLength = isLogin ? 0 : 8;
+  passwordInput.autocomplete = isLogin ? 'current-password' : 'new-password';
+  errorMsg.textContent = '';
+}
+
+$('toggle-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  mode = mode === 'signup' ? 'login' : 'signup';
+  render();
 });
+
+$('auth-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = { email: $('email').value, password: passwordInput.value };
+  if (mode === 'signup') {
+    body.pilotName = $('pilotName').value;
+    body.gamerId = $('gamerId').value;
+  }
+
+  submitBtn.disabled = true;
+  errorMsg.textContent = '';
+  try {
+    saveSession(await api(MODES[mode].endpoint, { method: 'POST', body }));
+    window.location.href = 'portal.html';
+  } catch (err) {
+    errorMsg.textContent = err.message;
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+render();
