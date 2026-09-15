@@ -160,10 +160,10 @@ export class HandTracker {
         this.canvas.height = this.video.videoHeight || 480;
       }
 
-      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
+      // Redraw only when a new camera frame arrives; clearing on every display refresh made the overlay flicker
       if (this.video.readyState >= 2 && this.video.currentTime !== this.lastVideoTime && this.handLandmarker) {
         this.lastVideoTime = this.video.currentTime;
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
         try {
           const results = this.handLandmarker.detectForVideo(this.video, performance.now());
@@ -172,7 +172,7 @@ export class HandTracker {
             const landmarks = results.landmarks[0]; // Primary hand
             const telemetry = this.recognizer.processLandmarks(landmarks);
 
-            // Draw futuristic skeleton overlay
+            this.drawNeutralBox(telemetry);
             this.drawSkeleton(landmarks, telemetry);
 
             if (this.onHandStatus) this.onHandStatus(true, results.landmarks.length > 1);
@@ -183,6 +183,7 @@ export class HandTracker {
             }
           } else {
             const telemetry = this.recognizer.processLandmarks(null);
+            this.drawNeutralBox(telemetry);
             if (this.onHandStatus) this.onHandStatus(false, false);
             if (this.onTelemetry) this.onTelemetry(telemetry);
           }
@@ -195,6 +196,24 @@ export class HandTracker {
     };
 
     this.animationFrameId = requestAnimationFrame(processFrame);
+  }
+
+  /**
+   * Outlines the neutral box on the webcam feed: green when the next move is ready,
+   * amber after a move until the palm comes back inside
+   */
+  drawNeutralBox(telemetry) {
+    const { cx, cy, halfW, halfH } = this.recognizer.getBox();
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+
+    // Box coordinates are already mirrored to match the mirrored video, so no canvas flip here
+    this.ctx.save();
+    this.ctx.strokeStyle = telemetry.handDetected && !telemetry.armed ? '#ffb800' : '#00ff88';
+    this.ctx.lineWidth = 2;
+    this.ctx.setLineDash([8, 6]);
+    this.ctx.strokeRect((cx - halfW) * w, (cy - halfH) * h, halfW * 2 * w, halfH * 2 * h);
+    this.ctx.restore();
   }
 
   /**
