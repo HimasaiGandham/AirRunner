@@ -7,34 +7,42 @@
 export const CONFIG = {
   // Gesture Recognition Calibration
   GESTURES: {
-    // Horizontal movement threshold (fraction of normalized video width)
-    THRESHOLD_X: 0.065,
-    
-    // Vertical movement threshold for jump (up) and slide (down)
-    THRESHOLD_Y: 0.075,
-    
+    // Neutral box, as fractions of the mirrored camera frame. A move fires when the palm leaves
+    // the box and re-arms when it comes back. Defaults match the Python prototype; tune per webcam.
+    NEUTRAL_BOX: {
+      X_MIN: 0.40,
+      X_MAX: 0.60,
+      Y_MIN: 0.38,
+      Y_MAX: 0.62
+    },
+
+    // The palm must come back within this fraction of the box size before the next move can fire
+    REARM_RATIO: 0.75,
+
+    // SLIDE waits until the palm moves down slower than this (frame heights per second),
+    // so dropping your hand out of view doesn't slide
+    SLIDE_STOP_SPEED: 0.6,
+
+    // SLIDE never fires with the palm this close to the bottom edge of the frame
+    EDGE_MARGIN: 0.08,
+
+    // A hand missing longer than this (ms) starts over disarmed; shorter dropouts keep a move in progress
+    LOST_HAND_RESET_MS: 200,
+
     // 3D Euclidean distance between thumb tip and index finger tip for Pinch (Roll)
     PINCH_DISTANCE: 0.070,
-    
+
     // Minimum cooldown (ms) between gesture activations to prevent erratic double-triggering
     COOLDOWN_MS: 240,
-    
+
     // Exponential Moving Average smoothing factor (0 = frozen, 1 = raw instant input)
     SMOOTHING_FACTOR: 0.38,
 
-    // Neutral zone boundaries (fraction of normalized camera dimensions)
-    NEUTRAL_BOX: {
-      X_MIN: 0.35,
-      X_MAX: 0.65,
-      Y_MIN: 0.35,
-      Y_MAX: 0.65
-    },
-
-    // Sensitivity presets
+    // Sensitivity presets: BOX_SCALE above 1 needs bigger hand movements
     PRESETS: {
-      LOW: { THRESHOLD_X: 0.090, THRESHOLD_Y: 0.095, PINCH_DISTANCE: 0.055 },
-      NORMAL: { THRESHOLD_X: 0.065, THRESHOLD_Y: 0.075, PINCH_DISTANCE: 0.070 },
-      HIGH: { THRESHOLD_X: 0.045, THRESHOLD_Y: 0.055, PINCH_DISTANCE: 0.080 }
+      LOW: { BOX_SCALE: 1.3, PINCH_DISTANCE: 0.055 },
+      NORMAL: { BOX_SCALE: 1.0, PINCH_DISTANCE: 0.070 },
+      HIGH: { BOX_SCALE: 0.75, PINCH_DISTANCE: 0.080 }
     }
   },
 
