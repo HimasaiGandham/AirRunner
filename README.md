@@ -28,11 +28,13 @@ Webcam frames never leave the browser. Hand tracking runs locally with WebAssemb
 
 | Hand Gesture | Direction / Motion | In-Game Action | Mechanics |
 | :--- | :--- | :--- | :--- |
-| **Move Hand Up** | Swift upward swipe / lift | **JUMP** | Vaults over low laser hurdles |
-| **Move Hand Down** | Swift downward swipe / drop | **SLIDE** | Crouches under hovering plasma beams |
-| **Move Hand Left** | Shift hand towards physical left | **MOVE LEFT** | Transitions into left lane smoothly |
-| **Move Hand Right** | Shift hand towards physical right | **MOVE RIGHT** | Transitions into right lane smoothly |
+| **Move Hand Up** | Raise your palm above the neutral box | **JUMP** | Vaults over low laser hurdles |
+| **Move Hand Down** | Lower your palm below the neutral box | **SLIDE** | Crouches under hovering plasma beams |
+| **Move Hand Left** | Move your palm left of the neutral box | **MOVE LEFT** | Transitions into left lane smoothly |
+| **Move Hand Right** | Move your palm right of the neutral box | **MOVE RIGHT** | Transitions into right lane smoothly |
 | **Thumb + Index Pinch** | Bring tips of thumb (4) and index (8) together | **ROLL** | Transforms runner into an energy sphere to pass void rings |
+
+The camera preview shows the **neutral box** as a dashed outline. Each move fires once when your palm leaves the box. Bring your palm back inside (the outline turns from amber back to green) before the next move. To change two lanes, go out, back, and out again.
 
 ### Keyboard
 
@@ -109,6 +111,9 @@ AirRunner/
 │   ├── requirements.txt
 │   ├── requirements-dev.txt
 │   └── .env.example
+├── tests/
+│   └── gestures.test.js    # Gesture recognition tests (npm test)
+├── package.json            # Marks js/ as ES modules for Node and defines npm test
 ├── airrunner_stage1.py     # Early desktop prototype: OpenCV hand tracking
 ├── airrunner_stage2.py     # Early desktop prototype: gestures pressed as arrow keys via PyAutoGUI
 └── hand_landmarker.task    # MediaPipe model, used if the remote model fails to load
@@ -162,10 +167,18 @@ Serve the files over `http://localhost` rather than opening them directly: brows
 
 ### 3. Run the tests
 
+API tests:
+
 ```bash
 cd server
 pip install -r requirements-dev.txt
 pytest
+```
+
+Gesture recognition tests (Node.js 20+, nothing to install), from the repository root:
+
+```bash
+npm test
 ```
 
 ---
@@ -209,14 +222,17 @@ To eliminate camera jitter:
 $$\text{SmoothX}_t = \text{SmoothX}_{t-1} \cdot (1 - \alpha) + \text{MirroredX}_t \cdot \alpha$$
 *(where $\alpha = \text{SMOOTHING\_FACTOR} = 0.38$)*.
 
-### 3. Jump and Slide Detection
-Velocity is computed across a sliding window of recent frames.
-- If $\Delta Y < -\text{THRESHOLD\_Y}$: Upward hand movement detected $\rightarrow$ **JUMP**.
-- If $\Delta Y > +\text{THRESHOLD\_Y}$: Downward hand movement detected $\rightarrow$ **SLIDE**.
+### 3. Neutral Box (Jump, Slide, Left, Right)
+The smoothed palm is compared with the neutral box (`NEUTRAL_BOX`, centered in the frame). Its distance from the box center $(c_x, c_y)$ is measured in box half-sizes:
+$$d_x = \frac{\text{SmoothX} - c_x}{w/2}, \quad d_y = \frac{\text{SmoothY} - c_y}{h/2}$$
+- While $\max(|d_x|, |d_y|) \le 1$ the palm is inside the box and nothing fires.
+- When the palm leaves the box, the axis with the larger overshoot picks the move: up $\rightarrow$ **JUMP**, down $\rightarrow$ **SLIDE**, left $\rightarrow$ **MOVE LEFT**, right $\rightarrow$ **MOVE RIGHT**.
+- The move fires **once**. The next move is armed only after the palm comes back within `REARM_RATIO` (75%) of the box, so returning your hand to center is never read as a gesture, and jitter on the box edge can't fire twice.
+- A hand out of view for more than `LOST_HAND_RESET_MS` (200 ms) starts disarmed, so a hand entering the frame from the side doesn't trigger a move. Shorter tracking dropouts, like motion blur mid-swipe, keep the move in progress.
+- Palm movement while pinching doesn't count as a move; bring the palm back into the box before the next one.
 
-### 4. Horizontal Lane Switching
-- If $\Delta X < -\text{THRESHOLD\_X}$: Leftward movement detected $\rightarrow$ **MOVE LEFT**.
-- If $\Delta X > +\text{THRESHOLD\_X}$: Rightward movement detected $\rightarrow$ **MOVE RIGHT**.
+### 4. Ignoring a Hand That Leaves the Frame
+Dropping your hand out of view would otherwise pass below the box and slide. So **SLIDE** waits until the palm's downward speed falls below `SLIDE_STOP_SPEED` and never fires within `EDGE_MARGIN` of the bottom edge. A hand that keeps falling until it disappears doesn't slide; lowering your hand and pausing does.
 
 ### 5. Roll (Pinch Detection)
 The 3D Euclidean distance between the Thumb Tip (4) and Index Finger Tip (8) is calculated:
@@ -231,11 +247,15 @@ All calibration constants live in [`js/config.js`](js/config.js).
 
 ### Adjusting Gesture Sensitivity
 ```javascript
-CONFIG.GESTURES.THRESHOLD_X = 0.065; // Lower for more sensitive horizontal swipes
-CONFIG.GESTURES.THRESHOLD_Y = 0.075; // Lower for more sensitive Jump/Slide
+CONFIG.GESTURES.NEUTRAL_BOX = { X_MIN: 0.40, X_MAX: 0.60, Y_MIN: 0.38, Y_MAX: 0.62 }; // Smaller box = smaller moves
+CONFIG.GESTURES.REARM_RATIO = 0.75;     // How far back inside the box the palm must come before the next move
+CONFIG.GESTURES.SLIDE_STOP_SPEED = 0.6; // Frame heights per second; raise it if slides feel late
+CONFIG.GESTURES.EDGE_MARGIN = 0.08;     // No slide this close to the bottom edge of the frame
 CONFIG.GESTURES.PINCH_DISTANCE = 0.070; // Distance between thumb and index tips
-CONFIG.GESTURES.COOLDOWN_MS = 240; // Cooldown between gesture activations
+CONFIG.GESTURES.COOLDOWN_MS = 240;      // Cooldown between gesture activations
 ```
+
+**Settings → Gesture Sensitivity** scales the box (`BOX_SCALE` in `PRESETS`). The default box matches the Python prototype; tune it for your webcam and seating position.
 
 ### Adjusting Game Speed & Acceleration
 ```javascript
