@@ -3,77 +3,406 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AirRunner - Game Portal</title>
+  <title>AirRunner - Pilot Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/auth.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-  <!-- Font Awesome for icons -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
 
-  <div class="split-container">
-    <!-- Left Side: Hero Image -->
-    <div class="hero-section">
-      <!-- Background handled in CSS -->
-    </div>
-
-    <!-- Right Side: Auth Form -->
-    <div class="auth-section">
-      <div class="auth-form-container">
-        
-        <h2 id="auth-title">Sign Up <span class="highlight">to unleash the gamer within you!</span></h2>
-        
-        <form id="auth-form">
-          <div class="input-group" id="group-name">
-            <label for="pilotName">Name</label>
-            <input type="text" id="pilotName" placeholder="Your Name">
-          </div>
+  <div class="auth-wrapper">
+    <div class="split-container">
+      <!-- Left Hero Section -->
+      <div class="hero-section">
+        <div class="hero-content">
+          <div class="brand-badge">AIRRUNNER v2.0</div>
+          <h1 class="hero-title">Rule The Skies With Your Hands</h1>
+          <p class="hero-tagline">Experience next-generation high-speed aerial flight powered entirely by AI camera hand tracking.</p>
           
-          <div class="input-group" id="group-gamerId">
-            <label for="gamerId">Gamer Id</label>
-            <input type="text" id="gamerId" placeholder="Unique Gamer ID">
+          <div class="feature-pills">
+            <div class="pill">
+              <span class="pill-icon">⚡</span>
+              <span>Sub-millisecond Latency</span>
+            </div>
+            <div class="pill">
+              <span class="pill-icon">🖐️</span>
+              <span>Vision Hand Control</span>
+            </div>
+            <div class="pill">
+              <span class="pill-icon">🏆</span>
+              <span>Real-Time Leaderboard</span>
+            </div>
           </div>
 
-          <div class="input-group">
-            <label for="email">Email</label>
-            <input type="email" id="email" required placeholder="your@email.com">
+          <div class="hero-footer-stats">
+            <div class="stat-box">
+              <div class="stat-val">3D</div>
+              <div class="stat-lbl">Three.js Engine</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-val">60+</div>
+              <div class="stat-lbl">FPS Gameplay</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-val">0</div>
+              <div class="stat-lbl">Peripherals Needed</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Auth Form Section -->
+      <div class="auth-section">
+        <div class="auth-form-container">
+
+          <!-- Global Banner for status/errors -->
+          <div id="status-banner" class="status-banner" role="alert" style="display: none;"></div>
+
+          <!-- ==================================================== -->
+          <!-- VIEW 1: SIGN IN (DEFAULT)                            -->
+          <!-- ==================================================== -->
+          <div id="signin-card" class="auth-card active">
+            <div class="card-header">
+              <h2>Pilot Sign In</h2>
+              <p class="subtitle">Enter your unique Gamer ID and password to access the cockpit.</p>
+            </div>
+
+            <form id="signin-form" autocomplete="on">
+              <div class="input-group">
+                <label for="loginGamerId">Gamer ID or Email</label>
+                <div class="input-icon-wrap">
+                  <span class="input-icon">👤</span>
+                  <input 
+                    type="text" 
+                    id="loginGamerId" 
+                    name="username"
+                    required 
+                    autocomplete="username" 
+                    placeholder="Enter your Gamer ID"
+                    autofocus
+                  >
+                </div>
+              </div>
+
+              <div class="input-group">
+                <div class="label-row">
+                  <label for="loginPassword">Password</label>
+                  <a href="#" id="to-forgot-link" class="action-link-subtle">Forgot Password?</a>
+                </div>
+                <div class="input-icon-wrap">
+                  <span class="input-icon">🔒</span>
+                  <input 
+                    type="password" 
+                    id="loginPassword" 
+                    name="password"
+                    required 
+                    autocomplete="current-password" 
+                    placeholder="••••••••"
+                  >
+                  <button type="button" class="btn-toggle-eye" data-target="loginPassword" aria-label="Toggle password visibility">👁️</button>
+                </div>
+              </div>
+
+              <button type="submit" class="btn-primary" id="btn-signin-submit">
+                <span>Launch Cockpit</span>
+                <span class="btn-arrow">→</span>
+              </button>
+            </form>
+
+            <div class="auth-toggle-box">
+              <p>Don't have an account yet? <button type="button" id="to-signup-btn" class="link-btn">Create Account</button></p>
+            </div>
           </div>
 
-          <div class="input-group">
-            <label for="password">Password</label>
-            <input type="password" id="password" required placeholder="••••••••">
+          <!-- ==================================================== -->
+          <!-- VIEW 2: SIGN UP (3-STEP ONBOARDING)                  -->
+          <!-- ==================================================== -->
+          <div id="signup-card" class="auth-card" style="display: none;">
+            <div class="card-header">
+              <div class="adventure-badge">NEW PILOT REGISTRATION</div>
+              <h2 class="adventure-heading">Your Adventure Begins Here.</h2>
+              <p class="subtitle">Create your unique flight profile with email OTP verification.</p>
+            </div>
+
+            <!-- Stepper indicators -->
+            <div class="signup-stepper">
+              <div class="step-item active" id="step-indicator-1">
+                <span class="step-circle">1</span>
+                <span class="step-text">Profile</span>
+              </div>
+              <div class="step-line" id="step-line-1"></div>
+              <div class="step-item" id="step-indicator-2">
+                <span class="step-circle">2</span>
+                <span class="step-text">Email OTP</span>
+              </div>
+              <div class="step-line" id="step-line-2"></div>
+              <div class="step-item" id="step-indicator-3">
+                <span class="step-circle">3</span>
+                <span class="step-text">Security</span>
+              </div>
+            </div>
+
+            <!-- STEP 1: Gamer Info -->
+            <div id="signup-step-1" class="signup-step-pane active">
+              <form id="signup-form-step1">
+                <div class="input-group">
+                  <label for="signupPilotName">Gamer / Pilot Name</label>
+                  <div class="input-icon-wrap">
+                    <span class="input-icon">🪪</span>
+                    <input 
+                      type="text" 
+                      id="signupPilotName" 
+                      required 
+                      minlength="2" 
+                      maxlength="40" 
+                      placeholder="e.g. John 'Maverick' Doe" 
+                      autocomplete="name"
+                    >
+                  </div>
+                </div>
+
+                <div class="input-group">
+                  <label for="signupGamerId">Unique Gamer ID</label>
+                  <div class="input-icon-wrap">
+                    <span class="input-icon">🏷️</span>
+                    <input 
+                      type="text" 
+                      id="signupGamerId" 
+                      required 
+                      minlength="3" 
+                      maxlength="30" 
+                      placeholder="Unique Gamer ID (e.g. SkyHunter)" 
+                      autocomplete="username"
+                    >
+                  </div>
+                  <span class="field-hint">Your unique public call sign across leaderboards.</span>
+                </div>
+
+                <div class="input-group">
+                  <label for="signupEmail">Email ID</label>
+                  <div class="input-icon-wrap">
+                    <span class="input-icon">✉️</span>
+                    <input 
+                      type="email" 
+                      id="signupEmail" 
+                      required 
+                      placeholder="your.email@example.com" 
+                      autocomplete="email"
+                    >
+                  </div>
+                  <span class="field-hint">A 6-digit OTP will be sent to your mailbox for verification.</span>
+                </div>
+
+                <button type="submit" class="btn-primary" id="btn-request-signup-otp">
+                  <span>Send Verification Code</span>
+                  <span class="btn-arrow">→</span>
+                </button>
+              </form>
+            </div>
+
+            <!-- STEP 2: Verify Email OTP -->
+            <div id="signup-step-2" class="signup-step-pane" style="display: none;">
+              <div class="otp-instruction-box">
+                <div class="otp-mail-icon">📨</div>
+                <p class="otp-instruction">We have sent a 6-digit verification code to:</p>
+                <div class="otp-target-email" id="display-signup-email">pilot@example.com</div>
+                <p class="otp-hint-sm">Please check your email inbox (and spam folder) and enter the code below.</p>
+              </div>
+
+              <form id="signup-form-step2">
+                <div class="input-group">
+                  <label for="signupOtpCode">Enter 6-Digit OTP Code</label>
+                  <div class="otp-input-wrap">
+                    <input 
+                      type="text" 
+                      id="signupOtpCode" 
+                      maxlength="6" 
+                      pattern="[0-9]{6}" 
+                      inputmode="numeric" 
+                      autocomplete="one-time-code"
+                      placeholder="• • • • • •" 
+                      required
+                    >
+                  </div>
+                </div>
+
+                <div class="otp-resend-row">
+                  <span id="signup-timer-text">Resend available in <strong id="signup-timer">60s</strong></span>
+                  <button type="button" id="btn-resend-signup-otp" class="link-btn" style="display: none;">Resend OTP</button>
+                </div>
+
+                <button type="submit" class="btn-primary" id="btn-verify-signup-otp">
+                  <span>Verify OTP</span>
+                  <span class="btn-arrow">→</span>
+                </button>
+
+                <div class="step-nav-row">
+                  <button type="button" id="btn-back-step1" class="btn-ghost">← Change Details / Email</button>
+                </div>
+              </form>
+            </div>
+
+            <!-- STEP 3: Enter & Confirm Password -->
+            <div id="signup-step-3" class="signup-step-pane" style="display: none;">
+              <form id="signup-form-step3">
+                <div class="badge-verified-notice">
+                  <span>✓ Email verified successfully</span>
+                </div>
+
+                <div class="input-group">
+                  <label for="signupPassword">Create Password</label>
+                  <div class="input-icon-wrap">
+                    <span class="input-icon">🔑</span>
+                    <input 
+                      type="password" 
+                      id="signupPassword" 
+                      required 
+                      minlength="8" 
+                      placeholder="Minimum 8 characters" 
+                      autocomplete="new-password"
+                    >
+                    <button type="button" class="btn-toggle-eye" data-target="signupPassword" aria-label="Toggle password visibility">👁️</button>
+                  </div>
+                </div>
+
+                <div class="input-group">
+                  <label for="signupConfirmPassword">Confirm Password</label>
+                  <div class="input-icon-wrap">
+                    <span class="input-icon">🔒</span>
+                    <input 
+                      type="password" 
+                      id="signupConfirmPassword" 
+                      required 
+                      minlength="8" 
+                      placeholder="Re-enter your password" 
+                      autocomplete="new-password"
+                    >
+                    <button type="button" class="btn-toggle-eye" data-target="signupConfirmPassword" aria-label="Toggle password visibility">👁️</button>
+                  </div>
+                  <span class="field-hint" id="password-match-hint"></span>
+                </div>
+
+                <button type="submit" class="btn-primary btn-launch" id="btn-complete-signup">
+                  <span>Complete Registration & Enter Dashboard</span>
+                  <span class="btn-arrow">🚀</span>
+                </button>
+              </form>
+            </div>
+
+            <div class="auth-toggle-box">
+              <p>Already have an account? <button type="button" id="to-signin-btn" class="link-btn">Sign In</button></p>
+            </div>
           </div>
 
-          <button type="submit" class="btn-primary" id="submit-btn">Sign Up</button>
-          
-          <div class="toggle-mode">
-            <p id="toggle-text">Already have an account? <a href="#" id="toggle-link">Sign In</a></p>
-          </div>
-        </form>
+          <!-- ==================================================== -->
+          <!-- VIEW 3: FORGOT PASSWORD (OTP RESET)                  -->
+          <!-- ==================================================== -->
+          <div id="forgot-card" class="auth-card" style="display: none;">
+            <div class="card-header">
+              <h2>Reset Password</h2>
+              <p class="subtitle">Recover access to your flight account with an email verification code.</p>
+            </div>
 
-        <div class="social-login">
-          <i class="fab fa-facebook-square"></i>
-          <i class="fab fa-google"></i>
+            <!-- Forgot Step 1: Identifier -->
+            <div id="forgot-step-1">
+              <form id="forgot-form-step1">
+                <div class="input-group">
+                  <label for="forgotIdentifier">Gamer ID or Registered Email</label>
+                  <div class="input-icon-wrap">
+                    <span class="input-icon">🔍</span>
+                    <input 
+                      type="text" 
+                      id="forgotIdentifier" 
+                      required 
+                      placeholder="Enter your Gamer ID or Email"
+                      autocomplete="username"
+                    >
+                  </div>
+                  <span class="field-hint">We will locate your account and send a 6-digit OTP to your registered email.</span>
+                </div>
+
+                <button type="submit" class="btn-primary" id="btn-forgot-request-otp">
+                  <span>Send Reset Code</span>
+                  <span class="btn-arrow">→</span>
+                </button>
+              </form>
+            </div>
+
+            <!-- Forgot Step 2: OTP + New Password -->
+            <div id="forgot-step-2" style="display: none;">
+              <div class="otp-instruction-box">
+                <div class="otp-mail-icon">🔐</div>
+                <p class="otp-instruction">Verification code sent to:</p>
+                <div class="otp-target-email" id="display-forgot-target">user@***.com</div>
+              </div>
+
+              <form id="forgot-form-step2">
+                <div class="input-group">
+                  <label for="forgotOtpCode">6-Digit Reset Code</label>
+                  <div class="otp-input-wrap">
+                    <input 
+                      type="text" 
+                      id="forgotOtpCode" 
+                      maxlength="6" 
+                      pattern="[0-9]{6}" 
+                      inputmode="numeric" 
+                      autocomplete="one-time-code"
+                      placeholder="• • • • • •" 
+                      required
+                    >
+                  </div>
+                </div>
+
+                <div class="input-group">
+                  <label for="forgotNewPassword">New Password</label>
+                  <div class="input-icon-wrap">
+                    <span class="input-icon">🔑</span>
+                    <input 
+                      type="password" 
+                      id="forgotNewPassword" 
+                      required 
+                      minlength="8" 
+                      placeholder="Minimum 8 characters" 
+                      autocomplete="new-password"
+                    >
+                    <button type="button" class="btn-toggle-eye" data-target="forgotNewPassword" aria-label="Toggle password visibility">👁️</button>
+                  </div>
+                </div>
+
+                <div class="input-group">
+                  <label for="forgotConfirmPassword">Confirm New Password</label>
+                  <div class="input-icon-wrap">
+                    <span class="input-icon">🔒</span>
+                    <input 
+                      type="password" 
+                      id="forgotConfirmPassword" 
+                      required 
+                      minlength="8" 
+                      placeholder="Re-enter new password" 
+                      autocomplete="new-password"
+                    >
+                    <button type="button" class="btn-toggle-eye" data-target="forgotConfirmPassword" aria-label="Toggle password visibility">👁️</button>
+                  </div>
+                </div>
+
+                <button type="submit" class="btn-primary" id="btn-forgot-submit-reset">
+                  <span>Reset Password & Sign In</span>
+                  <span class="btn-arrow">✓</span>
+                </button>
+              </form>
+            </div>
+
+            <div class="auth-toggle-box">
+              <p><button type="button" id="back-to-signin-btn" class="btn-ghost">← Return to Sign In</button></p>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
   </div>
 
-  <!-- OTP Modal (Hidden by default) -->
-  <div class="modal-overlay" id="otp-modal">
-    <div class="modal-content">
-      <h3>Email Verification</h3>
-      <p>We've sent a 6-digit OTP to your email. Enter it below to verify.</p>
-      <form id="otp-form">
-        <div class="input-group">
-          <input type="text" id="otp-code" maxlength="6" required placeholder="000000">
-        </div>
-        <button type="submit" class="btn-primary">Verify OTP</button>
-      </form>
-      <p class="error-msg" id="otp-error"></p>
-    </div>
-  </div>
-
-  <script src="js/auth.js"></script>
+  <script type="module" src="js/auth.js"></script>
 </body>
 </html>
