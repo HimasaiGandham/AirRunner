@@ -14,7 +14,7 @@ login.html ──► portal.html ──► index.html (game)
      └──────────────┴────── FastAPI (server/app.py) ─── MongoDB
 ```
 
-1. **Sign up / sign in** on `login.html`. The API returns a login token (valid for 1 hour) that the browser keeps in `localStorage`.
+1. **Sign up / sign in** on `login.html`. Signing up takes three steps: your details, a 6-digit code emailed to you, then a password. Signing in takes your Gamer ID (or email) and password, and there's a "Forgot password?" reset by email. The API returns a login token (valid for 1 hour) that the browser keeps in `localStorage`.
 2. **Portal** (`portal.html`) lists the games and shows the leaderboard: each pilot's best run.
 3. **Game** (`index.html`) sends you back to sign-in if your session is missing or expired. When a run ends, its score is posted to the API.
 
@@ -139,6 +139,7 @@ Edit `server/.env`:
 
 - `JWT_SECRET`: set it to a long random string. Generate one with `python -c "import secrets; print(secrets.token_hex(32))"`.
 - `MONGO_URI`: change it if MongoDB isn't at `mongodb://localhost:27017`.
+- `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`: optional. Set them to email sign-up and password-reset codes (for Gmail, use an App Password). Leave them blank for local development and codes are printed to the server console instead.
 
 Then run:
 
@@ -175,8 +176,12 @@ pytest
 | Method | Path | Auth | Input | Response |
 | :--- | :--- | :--- | :--- | :--- |
 | GET | `/api/health` | – | – | `{"status": "ok"}` |
-| POST | `/api/auth/signup` | – | `pilotName` (3–40 chars), `gamerId` (3–30 chars), `email`, `password` (8+ chars, max 72 bytes) | `201 {token, pilotName, gamerId}`; `409` if the email or Gamer ID is taken |
-| POST | `/api/auth/login` | – | `email`, `password` | `{token, pilotName, gamerId}`; `401` on bad credentials |
+| POST | `/api/auth/signup/request-otp` | – | `pilotName` (3–40 chars), `gamerId` (3–30 chars), `email` | Emails a 6-digit code; `409` if the Gamer ID or email is taken; `429` if a code was just sent |
+| POST | `/api/auth/signup/verify-otp` | – | `email`, `otp` | `{verified: true}`; `400` if wrong or expired; `429` after 5 wrong guesses |
+| POST | `/api/auth/signup/complete` | – | `email`, `otp`, `password` (8+ chars, max 72 bytes), `confirmPassword` | `201 {token, pilotName, gamerId}`. Name and Gamer ID come from the verified request |
+| POST | `/api/auth/login` | – | `gamerId` (Gamer ID or email), `password` | `{token, pilotName, gamerId}`; `401` on bad credentials |
+| POST | `/api/auth/forgot-password/request-otp` | – | `identifier` (Gamer ID or email) | Always the same reply, so it can't be used to discover accounts |
+| POST | `/api/auth/forgot-password/reset` | – | `identifier`, `otp`, `password`, `confirmPassword` | Sets the new password and signs out existing sessions |
 | POST | `/api/scores` | `Authorization: Bearer <token>` | `score`, `distance`, `coinsCollected` (whole numbers ≥ 0) | `201`; `401` if the token is missing or expired |
 | GET | `/api/leaderboard` | – | `?limit=` (1–50, default 10) | `[{gamerId, score, distance}]`, each pilot's best run, highest first |
 

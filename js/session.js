@@ -4,7 +4,10 @@
  * how the login token is stored, and one fetch helper with readable errors.
  */
 
-export const API_BASE = 'http://localhost:8000/api';
+const origin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
+export const API_BASE = origin.includes(':8080')
+  ? 'http://localhost:8000/api'
+  : (origin.startsWith('http') ? `${origin}/api` : 'http://localhost:8000/api');
 
 const KEYS = {
   token: 'airrunner_token',
