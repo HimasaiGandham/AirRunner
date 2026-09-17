@@ -1,7 +1,7 @@
-"""AirRunner API: pilot accounts, run scores and the leaderboard, stored in MongoDB."""
+"""AirRunner API: pilot accounts with email verification, run scores and the leaderboard, stored in MongoDB."""
 
 import os
-import random
+import secrets
 import smtplib
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -23,7 +23,7 @@ from pydantic import AfterValidator, BaseModel, BeforeValidator, EmailStr, Field
 from pymongo import ASCENDING, DESCENDING, MongoClient
 from pymongo.errors import DuplicateKeyError
 
-# Load .env from server directory, root directory, or environment
+# .env may sit next to this file or at the repository root
 SERVER_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SERVER_DIR.parent
 load_dotenv(SERVER_DIR / ".env")
@@ -32,13 +32,19 @@ load_dotenv()
 
 JWT_SECRET = os.getenv("JWT_SECRET")
 if not JWT_SECRET:
-    print("[WARNING] JWT_SECRET not found in .env. Using fallback development secret.")
-    JWT_SECRET = "airrunner-local-development-secret-key-32chars-minimum-safe"
+    raise RuntimeError("JWT_SECRET is not set. Copy server/.env.example to server/.env and fill it in.")
 
 TOKEN_TTL = timedelta(hours=1)
 LEADERBOARD_MAX = 50
 
-# SMTP Configuration for sending OTP emails to mail inbox
+# One-time codes: short-lived, few guesses, and a cooldown between emails, so a 6-digit
+# code can't be brute forced and the endpoint can't be used to spam an inbox
+OTP_TTL = timedelta(minutes=10)
+OTP_MAX_ATTEMPTS = 5
+OTP_RESEND_COOLDOWN = timedelta(seconds=60)
+OTP_MAX_SENDS_PER_HOUR = 5
+
+# SMTP delivery for verification codes; without it, codes are printed to the server console for local development
 SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "").strip()
@@ -47,7 +53,7 @@ SMTP_FROM = os.getenv("SMTP_FROM", "").strip() or SMTP_USER or "AirRunner <no-re
 
 
 def send_email_otp(to_email: str, otp_code: str, pilot_name: str = "Pilot", purpose: str = "signup") -> tuple[bool, str]:
-    """Sends a 6-digit OTP to the user's email inbox using SMTP, or logs to console if SMTP is not configured."""
+    """Emails a 6-digit code, or prints it to the console when SMTP isn't configured. Returns (sent, message)."""
     is_signup = purpose == "signup"
     subject = f"AirRunner Account Verification OTP: {otp_code}" if is_signup else f"AirRunner Password Reset OTP: {otp_code}"
     title = "Verify Your AirRunner Account" if is_signup else "AirRunner Password Reset"
@@ -97,55 +103,38 @@ def send_email_otp(to_email: str, otp_code: str, pilot_name: str = "Pilot", purp
                     server.starttls()
                     server.login(SMTP_USER, SMTP_PASSWORD)
                     server.sendmail(SMTP_FROM, [to_email], msg.as_string())
-            print(f"[EMAIL] Successfully sent {purpose} OTP email to {to_email}")
-            return True, f"OTP sent to {to_email}."
+            print(f"[EMAIL] Sent {purpose} code to {to_email}")
+            return True, f"Verification code sent to {to_email}."
         except Exception as exc:
-            print(f"[EMAIL ERROR] Failed to send email to {to_email}: {exc}")
-            return False, f"Could not send email via SMTP: {exc}"
+            print(f"[EMAIL ERROR] Could not send to {to_email}: {exc}")
+            return False, "Could not send the email."
 
-    # Development fallback if SMTP is not yet configured in server/.env
+    # Local development fallback: no SMTP configured, so the code goes to the server console
     tag = "SIGNUP EMAIL OTP" if is_signup else "PASSWORD RESET OTP"
     print("\n" + "=" * 60)
     print(f"[{tag}] Target Email: {to_email}")
     print(f"[{tag}] Pilot Name:   {pilot_name}")
-    print(f"[{tag}] 6-Digit Code:  {otp_code}")
-    print("[TIP] To send real emails to your mail inbox, set SMTP_HOST, SMTP_USER, SMTP_PASSWORD in server/.env")
+    print(f"[{tag}] 6-Digit Code: {otp_code}")
+    print("[TIP] Set SMTP_HOST, SMTP_USER and SMTP_PASSWORD in server/.env to deliver codes by email")
     print("=" * 60 + "\n")
-    return True, f"OTP generated (Printed to server console; add SMTP credentials to server/.env to deliver to inbox)."
+    return True, "Verification code printed to the server console (SMTP is not configured)."
 
 
-
-mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-mongo_db_name = os.getenv("MONGO_DB", "airrunner")
-
-try:
-    import mongomock
-except ImportError:
-    mongomock = None
-
-try:
-    client = MongoClient(mongo_uri, serverSelectionTimeoutMS=2000)
-    client.admin.command("ping")
-    db = client[mongo_db_name]
-    print(f"Successfully connected to MongoDB at {mongo_uri}")
-except Exception as err:
-    if mongomock:
-        print(f"Local MongoDB not detected ({err}). Using mongomock in-memory database for testing.")
-        client = mongomock.MongoClient()
-        db = client[mongo_db_name]
-    else:
-        raise
+client = MongoClient(os.getenv("MONGO_URI", "mongodb://localhost:27017"), serverSelectionTimeoutMS=5000)
+db = client[os.getenv("MONGO_DB", "airrunner")]
 
 
 def ensure_indexes(database):
     database.users.create_index("email", unique=True)
     database.users.create_index("gamerIdLower", unique=True)  # "Neo" and "neo" are the same Gamer ID
     database.scores.create_index([("score", DESCENDING), ("achievedAt", ASCENDING)])
+    # MongoDB removes verification codes once they expire
     database.otp_verifications.create_index("expiresAt", expireAfterSeconds=0)
 
 
 @asynccontextmanager
 async def lifespan(_app):
+    # Doubles as a startup check: fails within 5s with a clear error if MongoDB isn't reachable
     ensure_indexes(db)
     yield
 
@@ -170,49 +159,41 @@ def _fits_bcrypt(password: str) -> str:
 Name = Annotated[str, BeforeValidator(_strip)]
 Email = Annotated[EmailStr, AfterValidator(lambda email: email.lower())]
 Password = Annotated[str, AfterValidator(_fits_bcrypt)]
-
-
-class SignupRequest(BaseModel):
-    pilotName: Annotated[Name, Field(min_length=2, max_length=40)]
-    gamerId: Annotated[Name, Field(min_length=3, max_length=30)]
-    email: Email
-    password: Annotated[Password, Field(min_length=8)]
+Otp = Annotated[str, BeforeValidator(_strip), Field(min_length=6, max_length=6)]
 
 
 class SignupOtpRequest(BaseModel):
-    pilotName: Annotated[Name, Field(min_length=2, max_length=40)]
+    pilotName: Annotated[Name, Field(min_length=3, max_length=40)]
     gamerId: Annotated[Name, Field(min_length=3, max_length=30)]
     email: Email
 
 
 class VerifyOtpRequest(BaseModel):
     email: Email
-    otp: Annotated[str, Field(min_length=6, max_length=6)]
+    otp: Otp
 
 
 class CompleteSignupRequest(BaseModel):
-    pilotName: Annotated[Name, Field(min_length=2, max_length=40)]
-    gamerId: Annotated[Name, Field(min_length=3, max_length=30)]
     email: Email
-    otp: Annotated[str, Field(min_length=6, max_length=6)]
+    otp: Otp
     password: Annotated[Password, Field(min_length=8)]
-    confirmPassword: Annotated[str, Field(min_length=8)]
+    confirmPassword: str
 
 
 class LoginRequest(BaseModel):
-    gamerId: Annotated[str, BeforeValidator(_strip)]  # Accepts gamerId or email
+    gamerId: Name  # a Gamer ID or the registered email
     password: Password
 
 
 class ForgotPasswordOtpRequest(BaseModel):
-    identifier: Annotated[str, BeforeValidator(_strip)]
+    identifier: Name
 
 
 class ResetPasswordRequest(BaseModel):
-    email: Email
-    otp: Annotated[str, Field(min_length=6, max_length=6)]
+    identifier: Name
+    otp: Otp
     password: Annotated[Password, Field(min_length=8)]
-    confirmPassword: Annotated[str, Field(min_length=8)]
+    confirmPassword: str
 
 
 class ScoreRequest(BaseModel):
@@ -221,12 +202,109 @@ class ScoreRequest(BaseModel):
     coinsCollected: int = Field(ge=0)
 
 
-# Checked when the email is unknown, so response time doesn't reveal which emails are registered
+# Checked when the account is unknown, so response time doesn't reveal which accounts exist
 _DUMMY_HASH = bcrypt.hashpw(b"airrunner-unknown-user", bcrypt.gensalt())
+
+# Password reset answers the same way whether or not the account exists
+GENERIC_RESET_REPLY = {"message": "If that Gamer ID or email is registered, a reset code is on its way."}
+
+
+def _hash(value: str) -> str:
+    return bcrypt.hashpw(value.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _matches(value: str, hashed: str) -> bool:
+    return bcrypt.checkpw(value.encode("utf-8"), hashed.encode("utf-8"))
+
+
+def _as_utc(when: datetime) -> datetime:
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+def _find_user(identifier: str):
+    key = identifier.strip().lower()
+    return db.users.find_one({"$or": [{"gamerIdLower": key}, {"email": key}]})
+
+
+def _check_send_limits(record, now):
+    """One code a minute and a few an hour per address, so nobody's inbox can be flooded."""
+    if not record:
+        return
+    last_sent = record.get("lastSentAt")
+    if last_sent and now - _as_utc(last_sent) < OTP_RESEND_COOLDOWN:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Please wait a minute before requesting another code.")
+    window_start = record.get("sendWindowStart")
+    within_window = window_start and now - _as_utc(window_start) < timedelta(hours=1)
+    if within_window and record.get("sendCount", 0) >= OTP_MAX_SENDS_PER_HOUR:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many codes requested. Please try again later.")
+
+
+def _store_otp(email: str, purpose: str, extra: dict, now: datetime) -> str:
+    """Replaces any previous code for this address and purpose, and returns the plain code to email."""
+    record = db.otp_verifications.find_one({"email": email, "type": purpose})
+    _check_send_limits(record, now)
+
+    window_start, send_count = now, 1
+    previous_window = record.get("sendWindowStart") if record else None
+    if previous_window and now - _as_utc(previous_window) < timedelta(hours=1):
+        window_start = _as_utc(previous_window)
+        send_count = record.get("sendCount", 0) + 1
+
+    code = f"{secrets.randbelow(1_000_000):06d}"  # secrets, not random: reset codes must be unguessable
+    db.otp_verifications.update_one(
+        {"email": email, "type": purpose},
+        {
+            "$set": {
+                "email": email,
+                "type": purpose,
+                # Hashed, so a leaked database can't be used to take over accounts
+                "otpHash": _hash(code),
+                "attempts": 0,
+                "verified": False,
+                "expiresAt": now + OTP_TTL,
+                "createdAt": now,
+                "lastSentAt": now,
+                "sendWindowStart": window_start,
+                "sendCount": send_count,
+                **extra,
+            }
+        },
+        upsert=True,
+    )
+    return code
+
+
+def _consume_otp(email: str, purpose: str, code: str, now: datetime):
+    """Checks a submitted code and counts failures, so the code can't be found by trying every combination."""
+    record = db.otp_verifications.find_one({"email": email, "type": purpose})
+    if not record:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No active code for this request. Please request a new one.")
+
+    if now > _as_utc(record["expiresAt"]):
+        db.otp_verifications.delete_one({"_id": record["_id"]})
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That code has expired. Please request a new one.")
+
+    if not _matches(code.strip(), record["otpHash"]):
+        attempts = record.get("attempts", 0) + 1
+        if attempts >= OTP_MAX_ATTEMPTS:
+            db.otp_verifications.delete_one({"_id": record["_id"]})
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many incorrect codes. Please request a new one.")
+        db.otp_verifications.update_one({"_id": record["_id"]}, {"$set": {"attempts": attempts}})
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Incorrect code. Please check your inbox and try again.")
+
+    return record
 
 
 def _session_for(user):
-    claims = {"sub": str(user["_id"]), "gamerId": user["gamerId"], "exp": datetime.now(timezone.utc) + TOKEN_TTL}
+    now = datetime.now(timezone.utc)
+    claims = {
+        "sub": str(user["_id"]),
+        "gamerId": user["gamerId"],
+        # Bumped by a password reset, which signs out tokens issued earlier
+        "ver": user.get("tokenVersion", 0),
+        "iat": now,
+        "exp": now + TOKEN_TTL,
+    }
     return {
         "token": jwt.encode(claims, JWT_SECRET, algorithm="HS256"),
         "pilotName": user["pilotName"],
@@ -240,7 +318,9 @@ def current_user(authorization: Annotated[str | None, Header()] = None):
     if scheme.lower() == "bearer" and token:
         try:
             claims = jwt.decode(token, JWT_SECRET, algorithms=["HS256"], options={"require": ["exp", "sub"]})
-            user = db.users.find_one({"_id": ObjectId(claims["sub"])})
+            candidate = db.users.find_one({"_id": ObjectId(claims["sub"])})
+            if candidate and claims.get("ver", 0) == candidate.get("tokenVersion", 0):
+                user = candidate
         except (jwt.InvalidTokenError, InvalidId):
             pass
     if not user:
@@ -255,126 +335,59 @@ def health():
 
 @app.post("/api/auth/signup/request-otp")
 def signup_request_otp(req: SignupOtpRequest):
-    # Check if gamerId or email is already registered
-    existing_user = db.users.find_one({
-        "$or": [{"gamerIdLower": req.gamerId.lower()}, {"email": req.email}]
-    })
-    if existing_user:
-        if existing_user.get("gamerIdLower") == req.gamerId.lower():
-            raise HTTPException(status.HTTP_409_CONFLICT, "This Gamer ID is already taken. Please choose another.")
-        raise HTTPException(status.HTTP_409_CONFLICT, "This email address is already registered. Please sign in instead.")
+    """Step 1 of signup: claim a Gamer ID and email, and send a verification code to that address."""
+    now = datetime.now(timezone.utc)
+    if db.users.find_one({"gamerIdLower": req.gamerId.lower()}):
+        raise HTTPException(status.HTTP_409_CONFLICT, "That Gamer ID is already taken. Please choose another.")
+    if db.users.find_one({"email": req.email}):
+        raise HTTPException(status.HTTP_409_CONFLICT, "That email address is already registered. Please sign in instead.")
 
-    # Generate 6-digit OTP
-    otp_code = f"{random.randint(100000, 999999):06d}"
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
-
-    # Store or update OTP record
-    db.otp_verifications.update_one(
-        {"email": req.email, "type": "signup"},
-        {
-            "$set": {
-                "email": req.email,
-                "gamerId": req.gamerId,
-                "pilotName": req.pilotName,
-                "otp": otp_code,
-                "type": "signup",
-                "verified": False,
-                "expiresAt": expires_at,
-                "createdAt": datetime.now(timezone.utc)
-            }
-        },
-        upsert=True
-    )
-
-    # Send OTP email
-    sent, msg = send_email_otp(req.email, otp_code, req.pilotName, purpose="signup")
-    return {"message": f"Verification code sent to {req.email}", "email": req.email}
+    code = _store_otp(req.email, "signup", {"pilotName": req.pilotName, "gamerId": req.gamerId}, now)
+    sent, message = send_email_otp(req.email, code, req.pilotName, purpose="signup")
+    if not sent:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Could not send the verification email. Please try again.")
+    return {"message": message}
 
 
 @app.post("/api/auth/signup/verify-otp")
 def signup_verify_otp(req: VerifyOtpRequest):
-    record = db.otp_verifications.find_one({"email": req.email, "type": "signup"})
-    if not record:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No verification request found for this email. Please request a new code.")
-    
-    expires_at = record.get("expiresAt")
-    if expires_at:
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) > expires_at:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Verification code has expired. Please request a new one.")
-
-    if record.get("otp") != req.otp.strip():
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Incorrect verification code. Please check your inbox and try again.")
-
-    db.otp_verifications.update_one(
-        {"_id": record["_id"]},
-        {"$set": {"verified": True}}
-    )
+    """Step 2 of signup: check the emailed code before asking for a password."""
+    record = _consume_otp(req.email, "signup", req.otp, datetime.now(timezone.utc))
+    db.otp_verifications.update_one({"_id": record["_id"]}, {"$set": {"verified": True}})
     return {"message": "Email verified successfully.", "verified": True}
 
 
 @app.post("/api/auth/signup/complete", status_code=status.HTTP_201_CREATED)
 def signup_complete(req: CompleteSignupRequest):
+    """Step 3 of signup: set a password and create the account."""
     if req.password != req.confirmPassword:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Passwords do not match.")
 
-    # Check OTP verification
-    record = db.otp_verifications.find_one({"email": req.email, "type": "signup"})
-    if not record:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Please verify your email address first.")
+    now = datetime.now(timezone.utc)
+    record = _consume_otp(req.email, "signup", req.otp, now)
 
-    expires_at = record.get("expiresAt")
-    if expires_at:
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) > expires_at:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Verification session expired. Please request a new code.")
-
-    if record.get("otp") != req.otp.strip():
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid verification code.")
-
+    # Name and Gamer ID come from the verified request, not from this call
     user = {
-        "pilotName": req.pilotName,
-        "gamerId": req.gamerId,
-        "gamerIdLower": req.gamerId.lower(),
+        "pilotName": record["pilotName"],
+        "gamerId": record["gamerId"],
+        "gamerIdLower": record["gamerId"].lower(),
         "email": req.email,
-        "passwordHash": bcrypt.hashpw(req.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
-        "createdAt": datetime.now(timezone.utc),
+        "passwordHash": _hash(req.password),
+        "tokenVersion": 0,
+        "createdAt": now,
     }
     try:
         db.users.insert_one(user)
     except DuplicateKeyError:
-        raise HTTPException(status.HTTP_409_CONFLICT, "That Gamer ID or email is already registered.") from None
+        raise HTTPException(status.HTTP_409_CONFLICT, "That Gamer ID or email was just registered. Please sign in.") from None
 
-    # Clean up OTP record
     db.otp_verifications.delete_one({"_id": record["_id"]})
-    return _session_for(user)
-
-
-@app.post("/api/auth/signup", status_code=status.HTTP_201_CREATED)
-def signup_direct(req: SignupRequest):
-    """Direct signup endpoint retained for backwards compatibility."""
-    user = {
-        "pilotName": req.pilotName,
-        "gamerId": req.gamerId,
-        "gamerIdLower": req.gamerId.lower(),
-        "email": req.email,
-        "passwordHash": bcrypt.hashpw(req.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
-        "createdAt": datetime.now(timezone.utc),
-    }
-    try:
-        db.users.insert_one(user)
-    except DuplicateKeyError:
-        raise HTTPException(status.HTTP_409_CONFLICT, "That email or Gamer ID is already registered.") from None
     return _session_for(user)
 
 
 @app.post("/api/auth/login")
 def login(req: LoginRequest):
-    identifier = req.gamerId.strip().lower()
-    # Search by unique gamerId or registered email
-    user = db.users.find_one({"$or": [{"gamerIdLower": identifier}, {"email": identifier}]})
+    user = _find_user(req.gamerId)
     stored_hash = user["passwordHash"].encode("utf-8") if user else _DUMMY_HASH
     password_ok = bcrypt.checkpw(req.password.encode("utf-8"), stored_hash)
     if not (user and password_ok):
@@ -384,67 +397,38 @@ def login(req: LoginRequest):
 
 @app.post("/api/auth/forgot-password/request-otp")
 def forgot_password_request_otp(req: ForgotPasswordOtpRequest):
-    identifier = req.identifier.strip().lower()
-    user = db.users.find_one({"$or": [{"gamerIdLower": identifier}, {"email": identifier}]})
+    """Emails a reset code. The reply never says whether the account exists, nor what its email address is."""
+    user = _find_user(req.identifier)
     if not user:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No account found with that Gamer ID or Email.")
+        return GENERIC_RESET_REPLY
 
-    user_email = user["email"]
-    pilot_name = user.get("pilotName", "Pilot")
-    otp_code = f"{random.randint(100000, 999999):06d}"
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+    try:
+        code = _store_otp(user["email"], "reset", {"userId": user["_id"]}, datetime.now(timezone.utc))
+    except HTTPException:
+        return GENERIC_RESET_REPLY  # rate limited, but still don't reveal that the account exists
 
-    db.otp_verifications.update_one(
-        {"email": user_email, "type": "forgot_password"},
-        {
-            "$set": {
-                "email": user_email,
-                "userId": user["_id"],
-                "otp": otp_code,
-                "type": "forgot_password",
-                "verified": False,
-                "expiresAt": expires_at,
-                "createdAt": datetime.now(timezone.utc)
-            }
-        },
-        upsert=True
-    )
-
-    send_email_otp(user_email, otp_code, pilot_name, purpose="reset")
-
-    # Return masked email for privacy UI feedback (e.g. jo***@gmail.com)
-    parts = user_email.split("@")
-    masked = parts[0][:2] + "***@" + parts[1] if len(parts) == 2 and len(parts[0]) > 2 else user_email
-    return {"message": f"Reset code sent to {masked}", "email": user_email, "maskedEmail": masked}
+    send_email_otp(user["email"], code, user.get("pilotName", "Pilot"), purpose="reset")
+    return GENERIC_RESET_REPLY
 
 
 @app.post("/api/auth/forgot-password/reset")
 def forgot_password_reset(req: ResetPasswordRequest):
+    """Sets a new password for whoever holds the emailed code, and signs out sessions issued before the reset."""
     if req.password != req.confirmPassword:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Passwords do not match.")
 
-    record = db.otp_verifications.find_one({"email": req.email, "type": "forgot_password"})
-    if not record:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No password reset request found for this email.")
+    now = datetime.now(timezone.utc)
+    user = _find_user(req.identifier)
+    if not user:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That code is not valid. Please request a new one.")
 
-    expires_at = record.get("expiresAt")
-    if expires_at:
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) > expires_at:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Reset code has expired. Please request a new one.")
-
-    if record.get("otp") != req.otp.strip():
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Incorrect verification code.")
-
-    new_hash = bcrypt.hashpw(req.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    result = db.users.update_one({"email": req.email}, {"$set": {"passwordHash": new_hash}})
-    if result.matched_count == 0:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "User account not found.")
-
+    record = _consume_otp(user["email"], "reset", req.otp, now)
+    db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"passwordHash": _hash(req.password), "passwordChangedAt": now}, "$inc": {"tokenVersion": 1}},
+    )
     db.otp_verifications.delete_one({"_id": record["_id"]})
-    return {"message": "Password reset successfully! You can now sign in with your new password."}
-
+    return {"message": "Password reset. You can now sign in with your new password."}
 
 
 # ponytail: scores are reported by the browser and can be faked; add server-side run verification if cheating matters
@@ -479,7 +463,7 @@ def leaderboard(limit: Annotated[int, Query(ge=1, le=LEADERBOARD_MAX)] = 10):
 
 
 # ---------------------------------------------------------
-# Static Frontend Serving for unified local host access
+# Serving the game from the API, so everything runs on one local address
 # ---------------------------------------------------------
 if (ROOT_DIR / "login.html").exists():
     if (ROOT_DIR / "js").is_dir():
@@ -524,9 +508,9 @@ if __name__ == "__main__":
 
     port = int(os.getenv("PORT", "8000"))
     print("\n" + "=" * 60)
-    print("AirRunner Local Host Server Running!")
-    print(f"-> Open in browser: http://localhost:{port}/login.html")
-    print(f"-> API Documentation: http://localhost:{port}/docs")
+    print("AirRunner server running")
+    print(f"-> Game:          http://localhost:{port}/login.html")
+    print(f"-> API reference: http://localhost:{port}/docs")
     print("=" * 60 + "\n")
-    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
-
+    # Bound to localhost: the dev server is not hardened for the open network
+    uvicorn.run("app:app", host="127.0.0.1", port=port, reload=True)

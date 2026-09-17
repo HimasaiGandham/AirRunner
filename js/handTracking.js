@@ -36,12 +36,27 @@ export class HandTracker {
     this.onGesture = null;
     this.onHandStatus = null;
     this.onTelemetry = null;
-    this.onError = null;
   }
 
   /**
    * Initializes MediaPipe HandLandmarker with fallback mechanisms
    */
+  /**
+   * Loads the model and starts the camera once. Callers that arrive while a start is
+   * in progress share it, so the camera is never opened twice.
+   */
+  start() {
+    if (!this.startPromise) {
+      this.startPromise = this.loadModel()
+        .then(() => this.startCamera())
+        .catch((err) => {
+          this.startPromise = null; // let the next click retry
+          throw err;
+        });
+    }
+    return this.startPromise;
+  }
+
   async loadModel() {
     if (this.isModelLoaded) return true;
 
@@ -83,10 +98,7 @@ export class HandTracker {
       return true;
     } catch (err) {
       console.error("Failed to load MediaPipe HandLandmarker:", err);
-      if (this.onError) {
-        this.onError(`MediaPipe Init Error: ${err.message || err}`);
-      }
-      return false;
+      throw new Error(`Hand tracking failed to load (${err.message || err}).`);
     }
   }
 
@@ -95,9 +107,7 @@ export class HandTracker {
    */
   async startCamera() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      const msg = "Webcam API not supported in this browser. Please use Chrome, Edge, or Firefox.";
-      if (this.onError) this.onError(msg);
-      throw new Error(msg);
+      throw new Error("Webcam API not supported in this browser. Please use Chrome, Edge, or Firefox.");
     }
 
     try {
@@ -122,8 +132,7 @@ export class HandTracker {
         } else if (fallbackErr.name === 'NotFoundError' || fallbackErr.name === 'DevicesNotFoundError') {
           msg = "No webcam device detected on your system.";
         }
-        if (this.onError) this.onError(msg);
-        throw fallbackErr;
+        throw new Error(msg);
       }
     }
 
@@ -254,6 +263,7 @@ export class HandTracker {
 
   stop() {
     this.isTracking = false;
+    this.startPromise = null;
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;

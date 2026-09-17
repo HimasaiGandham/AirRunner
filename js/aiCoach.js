@@ -129,7 +129,7 @@ export class AICoach {
   }
 
   /**
-   * Optional Gemini 1.5/2.0 API call for generative coaching debrief
+   * Optional Gemini API call for generative coaching debrief
    */
   async callGeminiAPI(telemetry, rank, title) {
     const prompt = `You are the Cyber Coach for the touchless web game AirRunner.
@@ -143,14 +143,15 @@ The player just finished a run. Here is their telemetry:
 
 Give a 2-sentence cyberpunk tactical debrief directly to the player. Be encouraging, charismatic, and provide 1 specific tip based on how they crashed. Keep it under 50 words.`;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.geminiApiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${CONFIG.AI.GEMINI_MODEL}:generateContent`;
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.geminiApiKey },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 100, temperature: 0.7 }
+        // Headroom for newer Flash models, which spend output tokens thinking before they answer
+        generationConfig: { maxOutputTokens: 1024, temperature: 0.7 }
       })
     });
 

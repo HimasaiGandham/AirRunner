@@ -49,7 +49,7 @@ const signupState = {
 
 // Forgot Password State
 const forgotState = {
-  rawEmail: '',
+  identifier: '',
   otp: ''
 };
 
@@ -410,8 +410,9 @@ forgotStep1Form.addEventListener('submit', async (e) => {
       body: { identifier }
     });
 
-    forgotState.rawEmail = res.email;
-    document.getElementById('display-forgot-target').textContent = res.maskedEmail || res.email;
+    // The server never says whether the account exists, or what its email address is
+    forgotState.identifier = identifier;
+    document.getElementById('display-forgot-target').textContent = 'your registered email';
     document.getElementById('forgot-step-1').style.display = 'none';
     document.getElementById('forgot-step-2').style.display = 'block';
     document.getElementById('forgotOtpCode').focus();
@@ -458,7 +459,7 @@ forgotStep2Form.addEventListener('submit', async (e) => {
     const res = await api('/auth/forgot-password/reset', {
       method: 'POST',
       body: {
-        email: forgotState.rawEmail,
+        identifier: forgotState.identifier,
         otp,
         password,
         confirmPassword

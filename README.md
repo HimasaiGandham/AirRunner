@@ -2,21 +2,29 @@
 
 > **Move Your Hand. Control the Game. No Controller Required.**
 
-AirRunner is an open-source, touchless 3D endless-runner game running natively in modern desktop browsers. Players navigate a high-speed cyberpunk runway entirely through real-time hand gestures captured via their webcam using Google MediaPipe Hands computer vision.
+AirRunner is a touchless 3D endless-runner for desktop browsers. You steer a runner down a neon track with hand gestures that Google MediaPipe reads from your webcam. Pilots sign in, and every run is saved to a shared leaderboard.
 
 ---
 
-## 🎮 Core Interaction Concept
+## 🧭 How It Fits Together
 
-The core philosophy behind AirRunner eliminates physical input devices:
+```
+login.html ──► portal.html ──► index.html (game)
+     │              │                │
+     └──────────────┴────── FastAPI (server/app.py) ─── MongoDB
+```
 
-$$\text{Physical Hand Movement} \xrightarrow{\text{Webcam}} \text{MediaPipe 21 Landmark Detection} \xrightarrow{\text{Gesture Engine}} \text{Game Action} \xrightarrow{\text{Canvas}} \text{Instant 60 FPS Response}$$
+1. **Sign up / sign in** on `login.html`. Signing up takes three steps: your details, a 6-digit code emailed to you, then a password. Signing in takes your Gamer ID (or email) and password, and there's a "Forgot password?" reset by email. The API returns a login token (valid for 1 hour) that the browser keeps in `localStorage`.
+2. **Portal** (`portal.html`) lists the games and shows the leaderboard: each pilot's best run.
+3. **Game** (`index.html`) sends you back to sign-in if your session is missing or expired. When a run ends, its score is posted to the API.
 
-No keyboards, mice, touchscreens, or gamepads are required for full gameplay.
+Webcam frames never leave the browser. Hand tracking runs locally with WebAssembly/WebGL. The server stores only your account (name, Gamer ID, email, bcrypt password hash) and your run results.
 
 ---
 
-## 🕹️ Gesture Controls
+## 🕹️ Controls
+
+### Hand gestures
 
 | Hand Gesture | Direction / Motion | In-Game Action | Mechanics |
 | :--- | :--- | :--- | :--- |
@@ -26,37 +34,49 @@ No keyboards, mice, touchscreens, or gamepads are required for full gameplay.
 | **Move Hand Right** | Shift hand towards physical right | **MOVE RIGHT** | Transitions into right lane smoothly |
 | **Thumb + Index Pinch** | Bring tips of thumb (4) and index (8) together | **ROLL** | Transforms runner into an energy sphere to pass void rings |
 
-*(Optional accessibility fallback: Arrow Keys / WASD / Space / Shift are supported and can be toggled in Settings).*
+### Keyboard
+
+| Keys | Action |
+| :--- | :--- |
+| ← / A | Move left |
+| → / D | Move right |
+| ↑ / W / Space | Jump |
+| ↓ / S | Slide |
+| Shift / R / Z | Roll |
+| P / Esc | Pause |
+
+Keyboard controls are on by default (**Settings → Keyboard Fallback**). If there's no camera, or camera permission is denied, the game starts in keyboard mode and tells you why. With Keyboard Fallback turned off, the game needs a working camera.
 
 ---
 
 ## ✨ Features
 
-- **Real-Time Touchless Vision Control**: Runs at 30–60 FPS using client-side WebAssembly & WebGL.
-- **Pseudo-3D Perspective Canvas Engine**: Vanishing-point projection with dynamic scaling, smooth lane-switching interpolation, animated shadows, and scrolling cyber scanlines.
-- **4 Distinct Obstacle Classes**:
-  1. *Low Laser Hurdle* – Requires Jump.
-  2. *High Plasma Arch* – Requires Slide.
-  3. *Solid Quantum Monolith* – Requires Lane Switch.
-  4. *Void Singularity Ring* – Requires Roll.
-- **Collectible Quantum Coins**: Generates bonus score trails and arched jump sequences.
-- **Procedural Web Audio Engine**: Pure Web Audio API synthesized sound effects and dynamic synthwave basslines with zero external MP3 file dependencies.
-- **Intelligent AI Cyber Coach**:
-  - Automatically analyzes post-run telemetry: reflex grade ($S/A/B/C/D$), gesture reaction timing, and fatal collision causes.
-  - Generates instant heuristic coaching debriefs offline.
-  - Optional Google Gemini API integration for personalized generative debriefs.
-- **Live Interactive Practice Sandbox**: Test and calibrate gestures inside the *How To Play* modal before initiating a run.
-- **Local Resilience & Privacy**: Fully zero-data-leakage client-side processing. Includes pre-cached local `hand_landmarker.task` fallback.
+- **Touchless control**: MediaPipe HandLandmarker runs in the browser at 30–60 FPS.
+- **Pseudo-3D canvas engine**: vanishing-point projection, smooth lane switching, shadows and scrolling scanlines.
+- **4 obstacle types**, each needing a different move:
+  1. *Low Laser Hurdle*: jump.
+  2. *High Plasma Arch*: slide.
+  3. *Solid Quantum Monolith*: switch lanes.
+  4. *Void Singularity Ring*: roll.
+- **Coins** in trails and jump arcs for bonus score.
+- **Procedural audio**: every sound effect and the synthwave beat are generated with the Web Audio API. No audio files.
+- **AI coach** after each run: an offline grader gives a rank (S/A/B/C/D) and a tip based on what hit you. With a Gemini API key it writes a personalized debrief instead.
+- **Practice sandbox** in *How To Play* to try gestures before a run.
+- **Accounts and leaderboard**: sign-in with hashed passwords, and each pilot's best run on the portal.
+
+The menus and sign-in pages use a clean, light layout; the game track keeps its neon look.
 
 ---
 
 ## 🛠️ Technology Stack
 
-- **Frontend Core**: HTML5, Vanilla CSS3 (Custom Glassmorphic Neon Design System), Vanilla JavaScript (ES Modules).
-- **Game Engine**: HTML5 Canvas with 3D perspective projection and object-pooled particle systems.
-- **Computer Vision**: Google MediaPipe HandLandmarker (`@mediapipe/tasks-vision`).
-- **Audio**: Web Audio API (`AudioContext`, synthetic oscillators, biquad filters, procedural drum synthesis).
-- **AI Intelligence**: Google Gemini API (Optional generative debrief) + Rule-based heuristic reflex grader.
+- **Frontend**: HTML, CSS, vanilla JavaScript (ES modules). No build step.
+- **Game engine**: HTML5 Canvas 2D with perspective projection and pooled particles.
+- **Computer vision**: Google MediaPipe HandLandmarker (`@mediapipe/tasks-vision@0.10.0`, loaded from jsDelivr).
+- **Audio**: Web Audio API (oscillators, biquad filters, synthesized drums).
+- **Backend**: FastAPI, PyJWT, bcrypt.
+- **Database**: MongoDB via PyMongo.
+- **AI coach**: rule-based grader, plus the optional Google Gemini API.
 
 ---
 
@@ -64,57 +84,110 @@ No keyboards, mice, touchscreens, or gamepads are required for full gameplay.
 
 ```
 AirRunner/
-├── index.html              # Main game layout, HUD, overlays, and modals
-├── style.css               # Futuristic cyberpunk design system & responsive layout
+├── index.html              # Game: canvas, HUD, menus and modals
+├── login.html              # Sign up / sign in
+├── portal.html             # Game portal and leaderboard
+├── frontbasic.html         # Diagnostic feed: raw camera + landmark tracking (linked from the start screen)
+├── style.css               # Game styles
+├── css/auth.css            # Sign-in page styles
 ├── js/
-│   ├── config.js           # Central configuration: gesture thresholds, physics, speeds
-│   ├── handTracking.js     # MediaPipe HandLandmarker lifecycle, camera stream & skeleton overlay
-│   ├── gestures.js         # Real-time gesture recognition (Jump, Slide, Left, Right, Pinch)
-│   ├── audio.js            # Procedural Web Audio synthesizer (SFX & dynamic synth beat)
-│   ├── particles.js        # High-performance object-pooled canvas particle FX
-│   ├── player.js           # 3D player rendering, state machine, and vector cyber-suit
-│   ├── obstacles.js        # Procedural 3D obstacle generation, coins, and collision detection
-│   ├── game.js             # Core game loop, state management, and perspective rendering
-│   ├── aiCoach.js          # Telemetry analysis and optional Gemini AI coach
-│   └── main.js             # Application bootstrap, UI modal events, and controller wiring
-├── hand_landmarker.task    # Offline pre-cached MediaPipe vision model
-└── README.md               # Complete project documentation
+│   ├── session.js          # API address, login session storage, fetch helper
+│   ├── auth.js             # Sign-in / sign-up form
+│   ├── config.js           # Tunables: gesture thresholds, physics, speeds, Gemini model
+│   ├── handTracking.js     # MediaPipe lifecycle, camera stream, skeleton overlay
+│   ├── gestures.js         # Gesture recognition (jump, slide, left, right, pinch)
+│   ├── audio.js            # Procedural Web Audio sound effects and music
+│   ├── particles.js        # Pooled canvas particle effects
+│   ├── player.js           # Player rendering and state machine
+│   ├── obstacles.js        # Obstacle and coin spawning, collisions
+│   ├── game.js             # Game loop, states, perspective rendering
+│   ├── aiCoach.js          # Post-run grading and optional Gemini debrief
+│   └── main.js             # Bootstrap: sign-in check, UI wiring, keyboard controls, score upload
+├── server/
+│   ├── app.py              # FastAPI app: accounts, scores, leaderboard
+│   ├── test_app.py         # API tests (in-memory mongomock, no MongoDB needed)
+│   ├── requirements.txt
+│   ├── requirements-dev.txt
+│   └── .env.example
+├── airrunner_stage1.py     # Early desktop prototype: OpenCV hand tracking
+├── airrunner_stage2.py     # Early desktop prototype: gestures pressed as arrow keys via PyAutoGUI
+└── hand_landmarker.task    # MediaPipe model, used if the remote model fails to load
 ```
 
 ---
 
-## 🚀 How to Run Locally
+## 🚀 Running Locally
 
-Because MediaPipe uses modern WebAssembly, WebGL, and browser camera access APIs (`navigator.mediaDevices.getUserMedia`), modern browsers require the game to be served over `http://localhost` or `https://` (not raw `file://`).
+### Prerequisites
 
-### Option 1: Python (Built-in)
+- **Python 3.10+**
+- **MongoDB**, either a local [Community Server](https://www.mongodb.com/try/download/community), `docker run -d -p 27017:27017 mongo`, or a MongoDB Atlas connection string
+- **A webcam**, optional: keyboard play works without one
+- **Internet access**, because MediaPipe's runtime loads from jsDelivr
+
+### 1. Start the API
+
 ```bash
-# In the AirRunner directory:
+cd server
+python -m venv .venv
+.venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+copy .env.example .env            # macOS/Linux: cp .env.example .env
+```
+
+Edit `server/.env`:
+
+- `JWT_SECRET`: set it to a long random string. Generate one with `python -c "import secrets; print(secrets.token_hex(32))"`.
+- `MONGO_URI`: change it if MongoDB isn't at `mongodb://localhost:27017`.
+- `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`: optional. Set them to email sign-up and password-reset codes (for Gmail, use an App Password). Leave them blank for local development and codes are printed to the server console instead.
+
+Then run:
+
+```bash
+uvicorn app:app --port 8000
+```
+
+The server won't start if `JWT_SECRET` is empty or if it can't reach MongoDB within 5 seconds.
+
+### 2. Serve the frontend
+
+In a second terminal, from the repository root:
+
+```bash
 python -m http.server 8080
 ```
-Open your browser and navigate to:
-```
-http://localhost:8080
-```
 
-### Option 2: Node.js / npx
+Open **http://localhost:8080/login.html**, create an account, and press **Play Now**.
+
+Serve the files over `http://localhost` rather than opening them directly: browsers block the camera and WebAssembly on `file://` pages. The frontend calls the API at `http://localhost:8000`. If you run the API elsewhere, change `API_BASE` in [`js/session.js`](js/session.js).
+
+### 3. Run the tests
+
 ```bash
-# Using npx serve:
-npx -y serve .
+cd server
+pip install -r requirements-dev.txt
+pytest
 ```
-
-### Option 3: VS Code / IDE Live Server
-- Open the project folder in VS Code or your IDE.
-- Click **"Go Live"** using the Live Server extension.
 
 ---
 
-## 📹 Webcam Permissions & Privacy
+## 🔌 API
 
-1. When you click **START GAME**, your browser will display a permission prompt asking for access to your camera.
-2. Click **Allow**.
-3. **Privacy Assurance**: All video processing and hand tracking occurs 100% locally in your browser's memory using client-side WebAssembly/WebGL. No video feeds or images are ever uploaded to any server.
-4. You can minimize or hide the camera preview using the camera header toggle button during gameplay.
+| Method | Path | Auth | Input | Response |
+| :--- | :--- | :--- | :--- | :--- |
+| GET | `/api/health` | – | – | `{"status": "ok"}` |
+| POST | `/api/auth/signup/request-otp` | – | `pilotName` (3–40 chars), `gamerId` (3–30 chars), `email` | Emails a 6-digit code; `409` if the Gamer ID or email is taken; `429` if a code was just sent |
+| POST | `/api/auth/signup/verify-otp` | – | `email`, `otp` | `{verified: true}`; `400` if wrong or expired; `429` after 5 wrong guesses |
+| POST | `/api/auth/signup/complete` | – | `email`, `otp`, `password` (8+ chars, max 72 bytes), `confirmPassword` | `201 {token, pilotName, gamerId}`. Name and Gamer ID come from the verified request |
+| POST | `/api/auth/login` | – | `gamerId` (Gamer ID or email), `password` | `{token, pilotName, gamerId}`; `401` on bad credentials |
+| POST | `/api/auth/forgot-password/request-otp` | – | `identifier` (Gamer ID or email) | Always the same reply, so it can't be used to discover accounts |
+| POST | `/api/auth/forgot-password/reset` | – | `identifier`, `otp`, `password`, `confirmPassword` | Sets the new password and signs out existing sessions |
+| POST | `/api/scores` | `Authorization: Bearer <token>` | `score`, `distance`, `coinsCollected` (whole numbers ≥ 0) | `201`; `401` if the token is missing or expired |
+| GET | `/api/leaderboard` | – | `?limit=` (1–50, default 10) | `[{gamerId, score, distance}]`, each pilot's best run, highest first |
+
+Emails are stored in lowercase. Email and Gamer ID are unique, enforced by MongoDB indexes the server creates on startup. Invalid input returns `422` with a list of field errors.
+
+> Scores come from the browser, so a determined player could submit a fake one. Server-side run verification is listed under future work.
 
 ---
 
@@ -142,7 +215,7 @@ $$\text{SmoothX}_t = \text{SmoothX}_{t-1} \cdot (1 - \alpha) + \text{MirroredX}_
 *(where $\alpha = \text{SMOOTHING\_FACTOR} = 0.38$)*.
 
 ### 3. Jump and Slide Detection
-Velocity is computed across a sliding window of historical frames.
+Velocity is computed across a sliding window of recent frames.
 - If $\Delta Y < -\text{THRESHOLD\_Y}$: Upward hand movement detected $\rightarrow$ **JUMP**.
 - If $\Delta Y > +\text{THRESHOLD\_Y}$: Downward hand movement detected $\rightarrow$ **SLIDE**.
 
@@ -159,7 +232,7 @@ When $D_{\text{pinch}} < \text{PINCH\_DISTANCE}$ (0.070), an edge-triggered pinc
 
 ## ⚙️ Developer Guide: Customizing Parameters
 
-All calibration constants reside in [`js/config.js`](file:///d:/AirRunner/js/config.js):
+All calibration constants live in [`js/config.js`](js/config.js).
 
 ### Adjusting Gesture Sensitivity
 ```javascript
@@ -177,27 +250,43 @@ CONFIG.GAME.SPEED_ACCELERATION = 0.0035; // Acceleration per meter
 ```
 
 ### Adding New Obstacles
-In [`js/obstacles.js`](file:///d:/AirRunner/js/obstacles.js), define a new obstacle type in `ObstacleType`, add it to `spawnPattern()`, and specify its drawing and collision requirements in `checkInteraction()`.
+In [`js/obstacles.js`](js/obstacles.js), define a new obstacle type in `ObstacleType`, add it to `spawnPattern()`, and specify its drawing and collision requirements in `checkInteraction()`.
 
 ---
 
-## 🤖 Integrating Google Gemini AI
+## 🤖 Google Gemini Coach (Optional)
 
-AirRunner includes a built-in neural heuristic coach that functions completely offline without any API key.
+The built-in coach works offline with no key. To get generated debriefs instead:
 
-To activate Google Gemini Generative AI debriefs:
-1. Obtain a free Gemini API key from [Google AI Studio](https://aistudio.google.com/).
-2. Open AirRunner and click **SETTINGS**.
-3. Paste your key into the **Gemini AI API Key** field and click **SAVE CHANGES**.
-4. After any run, the Game Over screen will deliver an AI-generated debrief directly analyzing your specific telemetry and reflexes.
+1. Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/).
+2. In AirRunner, open **SETTINGS**, paste the key into **Gemini AI API Key**, and click **SAVE CHANGES**.
+3. After each run, the Game Over screen shows a debrief written from your run's stats.
+
+The key is stored in this browser's `localStorage` and sent only to Google's API, so anyone using the same browser profile can read it. The model is set by `CONFIG.AI.GEMINI_MODEL`. The default `gemini-flash-latest` alias follows Google's current Flash model, so it survives model retirements. If the call fails, the offline coach is used.
 
 ---
 
 ## 🔧 Troubleshooting
 
-- **Camera not starting**: Ensure your browser has permission to access the webcam. Check the address bar lock/camera icon.
-- **Running via `file:///`**: Modern browsers block webcam and WebAssembly modules over `file:///`. Use a local development server like `python -m http.server 8080` or `npx serve .`.
-- **High latency / Low FPS**: Close other applications using the webcam. Ensure hardware acceleration is enabled in your browser settings (`chrome://settings/system`).
+- **"Cannot reach the AirRunner server"**: start the API (`uvicorn app:app --port 8000` in `server/`) and check that `API_BASE` in `js/session.js` matches.
+- **API won't start: `JWT_SECRET is not set`**: create `server/.env` from `.env.example` and fill in `JWT_SECRET`.
+- **API won't start: `ServerSelectionTimeoutError`**: MongoDB isn't running or `MONGO_URI` is wrong.
+- **Sent back to the sign-in page**: sessions last one hour. Sign in again.
+- **Camera not starting**: check the camera icon in the address bar and allow access. You can still play with the keyboard meanwhile.
+- **"Hand tracking failed to load"**: MediaPipe loads from `cdn.jsdelivr.net`, so check your internet connection. Keyboard play still works.
+- **Blank page or camera blocked on `file:///`**: serve the folder with `python -m http.server 8080`.
+- **High latency / low FPS**: close other apps using the webcam and turn on hardware acceleration (`chrome://settings/system`).
+
+---
+
+## 🧪 Early Prototypes
+
+`airrunner_stage1.py` and `airrunner_stage2.py` are the desktop experiments the web game grew from. Stage 1 shows OpenCV hand tracking; Stage 2 turns gestures into arrow-key presses with PyAutoGUI, so it controls whatever window has focus. They aren't used by the web game. To try them:
+
+```bash
+pip install opencv-python mediapipe pyautogui
+python airrunner_stage1.py
+```
 
 ---
 
@@ -208,8 +297,8 @@ To activate Google Gemini Generative AI debriefs:
   - Open palm forward push for a Kinetic Shield.
 - **Multiplayer Mode**: Split-screen or WebRTC peer-to-peer motion racing.
 - **Adaptive AI Difficulty**: Dynamic obstacle generation matching player reaction times.
-- **Mobile Camera Support**: WebRTC / mobile browser touchless adaptation.
-- **Global Leaderboards**: Cloud-synced high scores with gesture telemetry verification.
+- **Mobile Camera Support**: Touchless play in mobile browsers.
+- **Verified Scores**: Server-side checks on submitted runs using gesture telemetry.
 
 ---
 

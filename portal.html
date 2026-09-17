@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Game Portal - AirRunner</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
     body {
       margin: 0;
@@ -13,7 +12,7 @@
       color: #333;
       font-family: Arial, Helvetica, sans-serif;
     }
-    
+
     header {
       padding: 20px 40px;
       background: #ffffff;
@@ -23,18 +22,18 @@
       border-bottom: 1px solid #e2e8f0;
       box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
-    
+
     header h1 {
       color: #2b6cb0;
       margin: 0;
       font-size: 24px;
     }
-    
+
     #user-info {
       color: #4a5568;
       margin-right: 15px;
     }
-    
+
     #logout-btn {
       background: #e2e8f0;
       border: 1px solid #cbd5e0;
@@ -44,7 +43,7 @@
       cursor: pointer;
       transition: background 0.2s;
     }
-    
+
     #logout-btn:hover {
       background: #cbd5e0;
     }
@@ -102,7 +101,7 @@
       font-size: 14px;
       line-height: 1.5;
     }
-    
+
     .play-btn {
       display: inline-block;
       margin-top: 15px;
@@ -116,6 +115,31 @@
 
     .play-btn:hover {
       background: #2b6cb0;
+    }
+
+    .leaderboard-title {
+      margin-top: 50px;
+    }
+
+    .leaderboard {
+      width: 100%;
+      margin-top: 15px;
+      border-collapse: collapse;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+    }
+
+    .leaderboard th,
+    .leaderboard td {
+      padding: 10px 16px;
+      text-align: left;
+      font-size: 14px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .leaderboard th {
+      background: #edf2f7;
+      color: #4a5568;
     }
   </style>
 </head>
@@ -132,7 +156,7 @@
   <div class="container">
     <h2>Available Games</h2>
     <p style="color: #a0aec0;">Select a game to begin your session.</p>
-    
+
     <div class="games-grid">
       <!-- Game 1: Temple Run / AirRunner -->
       <div class="game-card" onclick="window.location.href='index.html'">
@@ -143,7 +167,7 @@
           <a href="index.html" class="play-btn">Play Now</a>
         </div>
       </div>
-      
+
       <!-- Placeholder Game -->
       <div class="game-card" style="opacity: 0.5; cursor: not-allowed;">
         <div class="game-banner" style="background-image: url('https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=2071&auto=format&fit=crop');"></div>
@@ -153,30 +177,56 @@
         </div>
       </div>
     </div>
+
+    <h2 class="leaderboard-title">Leaderboard</h2>
+    <p style="color: #a0aec0;">Each pilot's best AirRunner run.</p>
+    <table class="leaderboard">
+      <thead>
+        <tr><th>#</th><th>Gamer ID</th><th>Best Score</th><th>Distance</th></tr>
+      </thead>
+      <tbody id="leaderboard-body">
+        <tr><td colspan="4">Loading…</td></tr>
+      </tbody>
+    </table>
   </div>
 
-  <script>
-    // Simple Auth check on Portal Load
-    document.addEventListener('DOMContentLoaded', () => {
-      const token = localStorage.getItem('airrunner_token');
-      const pilotName = localStorage.getItem('airrunner_pilotName');
-      
-      if (!token) {
-        window.location.href = 'login.html';
-        return;
-      }
-      
-      if (pilotName) {
-        document.getElementById('user-info').innerText = `Welcome, ${pilotName}`;
-      }
-      
+  <script type="module">
+    import { api, clearSession, getSession } from './js/session.js';
+
+    const session = getSession();
+    if (!session) {
+      window.location.replace('login.html');
+    } else {
+      document.getElementById('user-info').textContent = `Welcome, ${session.pilotName}`;
       document.getElementById('logout-btn').addEventListener('click', () => {
-        localStorage.removeItem('airrunner_token');
-        localStorage.removeItem('airrunner_pilotName');
-        localStorage.removeItem('airrunner_gamerId');
+        clearSession();
         window.location.href = 'login.html';
       });
-    });
+      loadLeaderboard();
+    }
+
+    async function loadLeaderboard() {
+      const tbody = document.getElementById('leaderboard-body');
+      try {
+        const rows = await api('/leaderboard');
+        tbody.replaceChildren(...(rows.length
+          ? rows.map((r, i) => tableRow([i + 1, r.gamerId, r.score, `${r.distance}m`]))
+          : [tableRow(['No runs yet. Be the first!'], 4)]));
+      } catch (err) {
+        tbody.replaceChildren(tableRow([err.message], 4));
+      }
+    }
+
+    // textContent only: Gamer IDs are user-supplied
+    function tableRow(cells, colspan) {
+      const tr = document.createElement('tr');
+      for (const text of cells) {
+        const td = tr.insertCell();
+        td.textContent = text;
+        if (colspan) td.colSpan = colspan;
+      }
+      return tr;
+    }
   </script>
 </body>
 </html>
