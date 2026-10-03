@@ -5,6 +5,16 @@
  */
 
 export const CONFIG = {
+  // Frame Timing
+  // The simulation advances on a fixed timestep, so gameplay speed, scoring
+  // and physics depend on elapsed time rather than on the display refresh
+  // rate: a 30Hz laptop and a 240Hz monitor play the same game.
+  TIMING: {
+    FIXED_TIMESTEP: 1 / 60,  // Seconds of simulation per step (60Hz reference)
+    MAX_FRAME_DT: 0.1,       // Clamp for tab-switch / GC hitches
+    MAX_STEPS_PER_FRAME: 6   // 6 * (1/60) === MAX_FRAME_DT, so no time is dropped
+  },
+
   // Gesture Recognition Calibration
   GESTURES: {
     // Horizontal movement threshold (fraction of normalized video width)
@@ -56,8 +66,10 @@ export const CONFIG = {
     // Player physics
     GRAVITY: 0.82,
     JUMP_VELOCITY: 16.5,
-    SLIDE_DURATION_FRAMES: 36, // ~600ms at 60fps
-    ROLL_DURATION_FRAMES: 32,  // ~530ms at 60fps
+    // Timed-action durations in SIMULATION steps (always 1/60s of real time,
+    // regardless of display refresh rate) — ~600ms and ~530ms of wall clock.
+    SLIDE_DURATION_FRAMES: 36,
+    ROLL_DURATION_FRAMES: 32,
     
     // 3D Perspective Projection
     PERSPECTIVE: {
