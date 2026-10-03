@@ -242,14 +242,13 @@ class ParticleManager {
     }
   }
 
-  updateAndDraw(ctx, width, height, currentSpeed, horizonY) {
-    // 1. Draw 3D Speed Warp Lines
-    ctx.save();
-    ctx.strokeStyle = '#00f0ff';
-    ctx.shadowColor = '#00f0ff';
-    ctx.shadowBlur = 6;
-    const centerX = width / 2;
-
+  /**
+   * Advances particle simulation by one fixed timestep. Called from the game
+   * loop's simulation step (not from render), so particle motion, lifetime
+   * and decay are frame-rate independent.
+   */
+  update(currentSpeed) {
+    // 1. Advance 3D Speed Warp Lines
     for (let i = 0; i < this.speedLines.length; i++) {
       const line = this.speedLines[i];
       line.z -= (line.speed + currentSpeed * 0.8);
@@ -259,6 +258,30 @@ class ParticleManager {
         line.x = (Math.random() - 0.5) * 1400;
         line.y = (Math.random() - 0.5) * 800;
       }
+    }
+
+    // 2. Advance active 2D/pseudo-3D particles
+    for (let i = 0; i < this.pool.length; i++) {
+      const p = this.pool[i];
+      if (p.active) {
+        p.update();
+      }
+    }
+  }
+
+  /**
+   * Draws the current particle state. Rendering only — no simulation.
+   */
+  draw(ctx, width, height, currentSpeed, horizonY) {
+    // 1. Draw 3D Speed Warp Lines
+    ctx.save();
+    ctx.strokeStyle = '#00f0ff';
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 6;
+    const centerX = width / 2;
+
+    for (let i = 0; i < this.speedLines.length; i++) {
+      const line = this.speedLines[i];
 
       const scale1 = 280 / (line.z + 280);
       const scale2 = 280 / (line.z + line.length + 280);
@@ -280,11 +303,10 @@ class ParticleManager {
     }
     ctx.restore();
 
-    // 2. Update and Draw active 2D/pseudo-3D particles
+    // 2. Draw active 2D/pseudo-3D particles
     for (let i = 0; i < this.pool.length; i++) {
       const p = this.pool[i];
       if (p.active) {
-        p.update();
         p.draw(ctx);
       }
     }

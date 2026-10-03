@@ -20,6 +20,11 @@ export const GameState = {
   GAMEOVER: 'GAMEOVER'
 };
 
+// Slack for the fixed-timestep accumulator comparison. Timestamps are binary
+// floats, so 1/30 - 1/60 lands a hair under 1/60 and would drop steps at
+// refresh rates that divide evenly into the simulation rate.
+const STEP_EPSILON = 1e-9;
+
 export class GameEngine {
   constructor(canvasElement, hudElements) {
     this.canvas = canvasElement;
@@ -59,6 +64,8 @@ export class GameEngine {
     // Animation loop
     this.lastFrameTime = performance.now();
     this.animationId = null;
+    // Leftover wall-clock time not yet consumed by a simulation step
+    this.accumulator = 0;
 
     // Bindings
     this.handleResize();
@@ -102,6 +109,7 @@ export class GameEngine {
     this.speedMultiplier = 1.0;
     this.trackScroll = 0;
     this.fatalObstacle = null;
+    this.accumulator = 0;
     this.gestureStats = { jumps: 0, slides: 0, rolls: 0, laneSwitches: 0 };
 
     this.player.reset();
@@ -241,13 +249,24 @@ export class GameEngine {
 
   /**
    * Main Game Loop
+   *
+   * Rendering happens once per animation frame, but the SIMULATION runs on a
+   * fixed timestep (CONFIG.TIMING.FIXED_TIMESTEP). Wall-clock time is banked in
+   * an accumulator and drained in whole steps, so every second of real time
+   * always produces exactly 60 simulation steps — on a 30Hz, 60Hz, 144Hz or
+   * 240Hz display alike. Without this, all per-step constants (score, distance,
+   * obstacle speed, jump arc, lane lerp) advanced per rendered frame and a
+   * 240Hz player outscored a 30Hz player roughly 8x.
    */
   startLoop() {
     const loop = (timestamp) => {
-      const dt = Math.min((timestamp - this.lastFrameTime) / 1000, 0.1);
+      // Clamp dt so a backgrounded tab or a long GC pause cannot fast-forward
+      // the run, and so a slow machine degrades gracefully instead of freezing.
+      const frameDt = Math.min((timestamp - this.lastFrameTime) / 1000, CONFIG.TIMING.MAX_FRAME_DT);
       this.lastFrameTime = timestamp;
 
-      this.update(dt, timestamp);
+      this.advanceFrame(frameDt, timestamp);
+
       this.render();
 
       this.animationId = requestAnimationFrame(loop);
@@ -256,6 +275,91 @@ export class GameEngine {
     this.animationId = requestAnimationFrame(loop);
   }
 
+  /**
+   * Advances one animation frame: wall-clock bookkeeping, then however many
+   * whole fixed-timestep simulation steps the elapsed time pays for.
+   *
+   * @param {number} frameDt  Elapsed seconds since the previous frame, already
+   *                          clamped to CONFIG.TIMING.MAX_FRAME_DT by the caller.
+   * @param {number} now      Frame timestamp in ms (drives the countdown).
+   */
+  advanceFrame(frameDt, now) {
+    // Wall-clock driven bookkeeping (countdown ticks) once per frame
+    this.update(frameDt, now);
+
+    this.accumulator += frameDt;
+
+    const step = CONFIG.TIMING.FIXED_TIMESTEP;
+    let steps = 0;
+    // The epsilon matters: at 30Hz a frame is exactly 2 * (1/60) seconds, but
+    // in binary floating point 0.0333... - 0.0166... lands a hair UNDER the
+    // step, which would silently drop every other step and run the game at
+    // half speed. Without this epsilon a 30Hz display plays a different
+    // (slower) game from a 60Hz one.
+    while (this.accumulator + STEP_EPSILON >= step && steps < CONFIG.TIMING.MAX_STEPS_PER_FRAME) {
+      this.accumulator -= step;
+      this.step();
+      steps++;
+    }
+
+    // Clamp residual float noise so it can never accumulate into a free step.
+    if (this.accumulator < STEP_EPSILON) {
+      this.accumulator = 0;
+    }
+    // Hard stall (long GC / breakpoint): drop the backlog rather than
+    // spending an unbounded number of steps catching up.
+    if (this.accumulator > CONFIG.TIMING.MAX_FRAME_DT) {
+      this.accumulator = 0;
+    }
+  }
+
+  /**
+   * One fixed-timestep simulation step (1/60s of game time).
+   */
+  step() {
+    if (this.state !== GameState.PLAYING && this.state !== GameState.GAMEOVER) {
+      return;
+    }
+
+    // 1. Speed and Progression Scaling
+    if (this.state === GameState.PLAYING) {
+      this.distance += (this.currentSpeed * 0.05);
+      this.score += Math.round(this.currentSpeed * 0.1);
+
+      // Gradual acceleration
+      this.currentSpeed = Math.min(
+        CONFIG.GAME.MAX_SPEED,
+        CONFIG.GAME.INITIAL_SPEED + this.distance * CONFIG.GAME.SPEED_ACCELERATION
+      );
+      this.speedMultiplier = (this.currentSpeed / CONFIG.GAME.INITIAL_SPEED);
+      audio.updateMusicTempo(this.speedMultiplier);
+
+      // Scrolling background lines
+      this.trackScroll = (this.trackScroll + this.currentSpeed) % 180;
+    }
+
+    // 2. Entity Updates
+    this.player.update(this.currentSpeed);
+    particles.update(this.currentSpeed);
+
+    if (this.state === GameState.PLAYING) {
+      this.obstacles.update(
+        this.currentSpeed,
+        this.player,
+        (pts) => { this.score += pts; },
+        () => { this.coins++; },
+        (cause) => { this.gameOver(cause); }
+      );
+    }
+
+    // 3. Update HUD
+    this.updateHUD();
+  }
+
+  /**
+   * Per-frame bookkeeping. The countdown is driven by wall-clock time, so it
+   * stays here rather than in the fixed-timestep step().
+   */
   update(dt, now) {
     // 1. Countdown Logic
     if (this.state === GameState.COUNTDOWN) {
@@ -275,43 +379,6 @@ export class GameEngine {
       }
       return;
     }
-
-    if (this.state !== GameState.PLAYING && this.state !== GameState.GAMEOVER) {
-      return;
-    }
-
-    // 2. Speed and Progression Scaling
-    if (this.state === GameState.PLAYING) {
-      this.distance += (this.currentSpeed * 0.05);
-      this.score += Math.round(this.currentSpeed * 0.1);
-
-      // Gradual acceleration
-      this.currentSpeed = Math.min(
-        CONFIG.GAME.MAX_SPEED,
-        CONFIG.GAME.INITIAL_SPEED + this.distance * CONFIG.GAME.SPEED_ACCELERATION
-      );
-      this.speedMultiplier = (this.currentSpeed / CONFIG.GAME.INITIAL_SPEED);
-      audio.updateMusicTempo(this.speedMultiplier);
-
-      // Scrolling background lines
-      this.trackScroll = (this.trackScroll + this.currentSpeed) % 180;
-    }
-
-    // 3. Entity Updates
-    this.player.update(this.currentSpeed);
-
-    if (this.state === GameState.PLAYING) {
-      this.obstacles.update(
-        this.currentSpeed,
-        this.player,
-        (pts) => { this.score += pts; },
-        () => { this.coins++; },
-        (cause) => { this.gameOver(cause); }
-      );
-    }
-
-    // 4. Update HUD
-    this.updateHUD();
   }
 
   updateHUD() {
@@ -345,8 +412,8 @@ export class GameEngine {
     // 4. Player Character
     this.player.draw(this.ctx, centerX, horizonY);
 
-    // 5. 3D Speed Warp Lines & Particle FX
-    particles.updateAndDraw(this.ctx, w, h, this.currentSpeed, horizonY);
+    // 5. 3D Speed Warp Lines & Particle FX (draw only — simulation runs in step())
+    particles.draw(this.ctx, w, h, this.currentSpeed, horizonY);
   }
 
   /**

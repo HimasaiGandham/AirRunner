@@ -1,0 +1,10 @@
+{
+  "name": "airunner",
+  "version": "1.0.0",
+  "description": "AirRunner - gesture-controlled endless runner",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"tests/*.test.mjs\""
+  }
+}
